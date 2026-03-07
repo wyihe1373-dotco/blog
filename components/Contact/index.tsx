@@ -5,7 +5,7 @@ import { motion, useInView } from 'framer-motion'
 const links = [
   { label: 'GitHub', href: 'https://github.com/wyihe1373-dotco' },
   { label: '微信', href: '#' },
-  { label: 'Email', href: 'mailto:wyihe1373@outlook.com' },
+  { label: 'Email', href: 'mailto:19972037939@163.com' },
 ]
 
 export default function Contact() {
