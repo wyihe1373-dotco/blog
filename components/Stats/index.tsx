@@ -68,7 +68,7 @@ export default function Stats() {
         animate={isInView ? { opacity: 1, y: 0 } : {}}
         transition={{ duration: 0.6 }}
       >
-        <p className="text-accent font-mono text-sm tracking-widest mb-2">ABOUT ME</p>
+        <p className="shimmer-text font-mono text-sm tracking-widest mb-2">ABOUT ME</p>
         <h2 className="text-5xl font-bold text-white mb-12 tracking-tight">By the Numbers</h2>
       </motion.div>
 

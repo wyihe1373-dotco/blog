@@ -15,7 +15,7 @@ export default function Hero() {
 
       <div className="relative z-10 text-center px-6">
         <motion.p
-          className="text-accent font-mono text-sm tracking-widest mb-4"
+          className="shimmer-text font-mono text-sm tracking-widest mb-4"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
@@ -24,12 +24,27 @@ export default function Hero() {
         </motion.p>
 
         <motion.h1
-          className="text-5xl md:text-7xl font-bold text-white mb-4"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
+          className="text-5xl md:text-7xl font-bold text-white mb-4 flex justify-center gap-[0.05em]"
+          initial="hidden"
+          animate="visible"
+          variants={{
+            visible: { transition: { staggerChildren: 0.08, delayChildren: 0.4 } },
+            hidden: {},
+          }}
         >
-          王一贺
+          {'王一贺'.split('').map((char, i) => (
+            <motion.span
+              key={i}
+              variants={{
+                hidden: { opacity: 0, y: 40, rotateX: -90 },
+                visible: { opacity: 1, y: 0, rotateX: 0 },
+              }}
+              transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+              style={{ display: 'inline-block', transformOrigin: 'bottom center' }}
+            >
+              {char}
+            </motion.span>
+          ))}
         </motion.h1>
 
         <motion.div

@@ -40,6 +40,28 @@ body {
   }
 }
 
+/* Shimmer text animation */
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    #22d3ee 0%,
+    #6366f1 25%,
+    #22d3ee 50%,
+    #a78bfa 75%,
+    #22d3ee 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 3s linear infinite;
+}
+
 /* Card local spotlight */
 .tilt-card::after {
   content: '';

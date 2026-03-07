@@ -1,6 +1,7 @@
 'use client'
 import { useRef } from 'react'
 import { motion, useInView } from 'framer-motion'
+import MagneticButton from '@/components/MagneticButton'
 
 const links = [
   { label: 'GitHub', href: 'https://github.com/wyihe1373-dotco' },
@@ -29,15 +30,12 @@ export default function Contact() {
         animate={isInView ? { opacity: 1, y: 0 } : {}}
         transition={{ duration: 0.6 }}
       >
-        <p className="text-accent font-mono text-sm tracking-widest mb-2">GET IN TOUCH</p>
-        <h2 className="text-4xl font-bold text-white mb-4">一起做点有趣的事</h2>
-        <p className="text-slate-400 mb-10">
-          5 年前端经验，擅长 Vue / React / Three.js，欢迎聊聊全职机会或有趣的项目合作。
-        </p>
+        <p className="shimmer-text font-mono text-sm tracking-widest mb-6 ">GET IN TOUCH</p>
+       
 
         <div className="flex gap-4 justify-center flex-wrap">
           {links.map((link) => (
-            <a
+            <MagneticButton
               key={link.label}
               href={link.href}
               target="_blank"
@@ -45,7 +43,7 @@ export default function Contact() {
               className="px-6 py-3 glass rounded-lg text-white font-medium hover:border-accent/50 hover:shadow-[0_0_20px_rgba(34,211,238,0.2)] transition-all"
             >
               {link.label}
-            </a>
+            </MagneticButton>
           ))}
         </div>
 

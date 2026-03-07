@@ -41,7 +41,7 @@ export default function Projects() {
         animate={isInView ? { opacity: 1, y: 0 } : {}}
         transition={{ duration: 0.6 }}
       >
-        <p className="text-accent font-mono text-sm tracking-widest mb-2">PORTFOLIO</p>
+        <p className="shimmer-text font-mono text-sm tracking-widest mb-2">PORTFOLIO</p>
         <h2 className="text-4xl font-bold text-white mb-12">Featured Projects</h2>
       </motion.div>
 
