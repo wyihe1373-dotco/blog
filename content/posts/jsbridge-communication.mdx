@@ -1,0 +1,192 @@
+---
+title: "JSBridge 通信封装：让 H5 与 Native 对话更优雅"
+date: "2026-01-15"
+tags: ["JSBridge", "H5", "React", "TypeScript"]
+description: "基于长桥证券 App 实践，封装类型安全的 JSBridge 通信层，解决异步调用、错误处理、Token 鉴权等问题。"
+---
+
+# JSBridge 通信封装实践
+
+在混合开发（Hybrid App）中，H5 页面需要频繁调用 Native 能力：获取用户 Token、调起支付、读取设备信息……这些调用都通过 JSBridge 完成。
+
+原始的 JSBridge 调用往往是这样的：
+
+```js
+window.NativeBridge.call('getUserToken', {}, function(result) {
+  if (result.code === 0) {
+    // ...
+  }
+})
+```
+
+回调地狱、无类型、难测试。本文分享如何封装一个优雅的 JSBridge 层。
+
+## 1. 基础封装：Promise 化
+
+首先把回调风格转成 Promise：
+
+```ts
+// lib/bridge.ts
+type BridgeCallback = (result: { code: number; data?: unknown; msg?: string }) => void
+
+declare global {
+  interface Window {
+    NativeBridge?: {
+      call: (method: string, params: unknown, callback: BridgeCallback) => void
+    }
+    // iOS WKWebView 使用 webkit.messageHandlers
+    webkit?: {
+      messageHandlers: Record<string, { postMessage: (data: unknown) => void }>
+    }
+  }
+}
+
+export function bridgeCall<T = unknown>(method: string, params?: unknown): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`JSBridge timeout: ${method}`))
+    }, 5000)
+
+    const callback: BridgeCallback = (result) => {
+      clearTimeout(timeout)
+      if (result.code === 0) {
+        resolve(result.data as T)
+      } else {
+        reject(new Error(result.msg ?? `Bridge error: ${result.code}`))
+      }
+    }
+
+    if (window.NativeBridge) {
+      window.NativeBridge.call(method, params ?? {}, callback)
+    } else {
+      // 开发环境 Mock
+      console.warn(`[Bridge Mock] ${method}`, params)
+      clearTimeout(timeout)
+      resolve(getMockData(method) as T)
+    }
+  })
+}
+```
+
+## 2. 类型安全的 API 层
+
+在 `bridgeCall` 基础上，封装每个具体方法，加上完整类型：
+
+```ts
+// lib/bridge/auth.ts
+interface UserToken {
+  accessToken: string
+  refreshToken: string
+  expiresAt: number
+}
+
+export async function getUserToken(): Promise<UserToken> {
+  return bridgeCall<UserToken>('getUserToken')
+}
+
+export async function refreshToken(token: string): Promise<UserToken> {
+  return bridgeCall<UserToken>('refreshToken', { token })
+}
+
+// lib/bridge/account.ts
+interface AccountInfo {
+  accountId: string
+  accountType: 'cash' | 'margin'
+  currency: 'HKD' | 'USD' | 'CNH'
+  balance: number
+}
+
+export async function getAccountList(): Promise<AccountInfo[]> {
+  return bridgeCall<AccountInfo[]>('getAccountList')
+}
+```
+
+## 3. 全局 Token 注入
+
+每次请求都手动获取 Token 很繁琐，封装一个自动注入 Token 的 `request` 函数：
+
+```ts
+// lib/request.ts
+import { getUserToken } from './bridge/auth'
+
+let tokenCache: { value: string; expiresAt: number } | null = null
+
+async function getToken(): Promise<string> {
+  const now = Date.now()
+  if (tokenCache && tokenCache.expiresAt > now + 60_000) {
+    return tokenCache.value // 有效期内直接返回缓存
+  }
+
+  const { accessToken, expiresAt } = await getUserToken()
+  tokenCache = { value: accessToken, expiresAt }
+  return accessToken
+}
+
+export async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = await getToken()
+
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...options?.headers,
+    },
+  })
+
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`)
+  return res.json() as Promise<T>
+}
+```
+
+## 4. 开发环境 Mock
+
+本地开发没有 Native 环境，需要 Mock JSBridge：
+
+```ts
+// lib/bridge/mock.ts
+const mockData: Record<string, unknown> = {
+  getUserToken: {
+    accessToken: 'mock-token-for-dev',
+    refreshToken: 'mock-refresh-token',
+    expiresAt: Date.now() + 3600_000,
+  },
+  getAccountList: [
+    { accountId: 'ACC001', accountType: 'cash', currency: 'HKD', balance: 100000 },
+  ],
+}
+
+export function getMockData(method: string): unknown {
+  return mockData[method] ?? null
+}
+```
+
+配合环境变量，生产代码自动走真实 Bridge，本地走 Mock。
+
+## 5. 在 React 中使用
+
+封装一个 Hook，统一管理 Bridge 调用状态：
+
+```tsx
+function useAccountList() {
+  const [accounts, setAccounts] = useState<AccountInfo[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    getAccountList()
+      .then(setAccounts)
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  return { accounts, loading, error }
+}
+```
+
+## 总结
+
+封装后的 JSBridge 通信层带来三个核心好处：
+1. **类型安全**：TypeScript 类型覆盖所有 Bridge 方法，编译期发现错误
+2. **统一错误处理**：超时、错误码统一管理，不再散落各处
+3. **可测试**：Mock 层让组件测试不依赖真实 Native 环境

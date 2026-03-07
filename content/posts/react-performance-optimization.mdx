@@ -1,0 +1,150 @@
+---
+title: "React 性能优化：从长桥证券 H5 项目提炼的实战经验"
+date: "2026-02-20"
+tags: ["React", "Performance", "WebView", "TypeScript"]
+description: "在 WebView 环境下做高频渲染优化，分享 useMemo / useCallback / 虚拟列表等实际落地经验。"
+---
+
+# React 性能优化：WebView 下的实战经验
+
+在长桥证券 App 内嵌 H5 项目中，我们面对一个典型挑战：**WebView 环境性能远不如原生**，而金融页面对流畅度要求极高——持仓列表要实时滚动，K 线数据要秒级更新。
+
+本文总结几个实际落地的优化手段。
+
+## 1. 减少不必要的 Re-render
+
+金融应用中，行情数据通过 WebSocket 推送，频率可能达每秒数次。如果把行情数据放在顶层 state，每次更新都会导致整棵树重渲。
+
+**问题代码：**
+
+```tsx
+// 父组件持有 quotes，每次更新触发所有子组件重渲
+function PortfolioPage() {
+  const [quotes, setQuotes] = useState<Record<string, Quote>>({})
+
+  return (
+    <div>
+      <Header />          {/* 和行情无关，但也重渲了 */}
+      <HoldingList quotes={quotes} />
+      <Footer />
+    </div>
+  )
+}
+```
+
+**优化方案：**
+
+将行情数据下沉到用的地方，或使用 `React.memo` + 细粒度 props：
+
+```tsx
+const HoldingItem = React.memo(({ holding, quote }: Props) => {
+  return (
+    <div>
+      <span>{holding.name}</span>
+      <span className={quote.change > 0 ? 'text-green-400' : 'text-red-400'}>
+        {quote.price}
+      </span>
+    </div>
+  )
+}, (prev, next) => {
+  // 自定义比较：只有 price 或 change 变化才重渲
+  return prev.quote.price === next.quote.price &&
+         prev.quote.change === next.quote.change
+})
+```
+
+## 2. useMemo 缓存昂贵计算
+
+持仓日报需要对几十个持仓做收益统计，每次渲染都重算会卡顿。
+
+```tsx
+const portfolioStats = useMemo(() => {
+  return holdings.reduce((acc, h) => ({
+    totalValue: acc.totalValue + h.marketValue,
+    totalProfit: acc.totalProfit + h.profit,
+    profitRate: 0, // 下面再算
+  }), { totalValue: 0, totalProfit: 0, profitRate: 0 })
+}, [holdings]) // holdings 不变则不重算
+```
+
+**注意**：`useMemo` 有成本，不要对简单计算使用。只用于：
+- 数组 `filter` / `reduce` / `sort` 等 O(n) 操作
+- 需要深比较的对象引用稳定性
+
+## 3. 虚拟列表处理长列表
+
+基金列表可能有几百条，全量渲染会让 WebView 直接卡死。使用 `@tanstack/react-virtual`：
+
+```tsx
+import { useVirtualizer } from '@tanstack/react-virtual'
+
+function FundList({ funds }: { funds: Fund[] }) {
+  const parentRef = useRef<HTMLDivElement>(null)
+
+  const virtualizer = useVirtualizer({
+    count: funds.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 72, // 每行估算高度
+    overscan: 5,
+  })
+
+  return (
+    <div ref={parentRef} className="h-full overflow-auto">
+      <div style={{ height: virtualizer.getTotalSize() }}>
+        {virtualizer.getVirtualItems().map(item => (
+          <div
+            key={item.index}
+            style={{ transform: `translateY(${item.start}px)` }}
+            className="absolute w-full"
+          >
+            <FundItem fund={funds[item.index]} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+```
+
+## 4. 图片与资源懒加载
+
+WebView 首屏加载时，避免加载大量不在视口内的图片：
+
+```tsx
+// 使用 Intersection Observer 懒加载基金 logo
+function LazyImage({ src, alt }: { src: string; alt: string }) {
+  const [loaded, setLoaded] = useState(false)
+  const imgRef = useRef<HTMLImageElement>(null)
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setLoaded(true)
+        observer.disconnect()
+      }
+    })
+    if (imgRef.current) observer.observe(imgRef.current)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <img
+      ref={imgRef}
+      src={loaded ? src : undefined}
+      alt={alt}
+      className="w-8 h-8 rounded-full bg-slate-700"
+    />
+  )
+}
+```
+
+## 总结
+
+| 问题 | 方案 |
+|------|------|
+| 高频数据更新导致全量重渲 | `React.memo` + 细粒度 props |
+| 昂贵计算重复执行 | `useMemo` |
+| 长列表卡顿 | 虚拟列表（react-virtual） |
+| 首屏图片过多 | Intersection Observer 懒加载 |
+
+在 WebView 环境下，这几个优化叠加使用后，持仓页面滚动帧率从 30fps 提升到了稳定的 60fps。

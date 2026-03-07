@@ -1,0 +1,161 @@
+---
+title: "Three.js 粒子效果入门：从零实现星云背景"
+date: "2025-12-10"
+tags: ["Three.js", "WebGL", "Frontend", "3D"]
+description: "手把手实现 5000 粒子星云效果，涵盖 BufferGeometry、顶点着色器、鼠标视差交互。"
+---
+
+# Three.js 粒子效果：实现星云背景
+
+在本博客的首页，你能看到一个随鼠标移动的粒子星云效果。本文分享它的实现原理，帮你从零理解 Three.js 粒子系统。
+
+## 为什么用 Three.js 而不是 CSS
+
+CSS 动画可以实现简单的粒子效果，但对于 5000+ 粒子：
+- CSS 每个粒子都是独立 DOM 元素，内存和重绘开销大
+- WebGL 把所有粒子打包成一个 GPU Buffer，性能相差数十倍
+- WebGL 支持顶点着色器，可以在 GPU 端并行计算每个粒子的位置
+
+## 核心概念：BufferGeometry
+
+```ts
+const count = 5000
+const positions = new Float32Array(count * 3) // x, y, z for each particle
+const colors = new Float32Array(count * 3)    // r, g, b for each particle
+
+for (let i = 0; i < count; i++) {
+  // 随机分布在 [-5, 5] 的空间内
+  positions[i * 3]     = (Math.random() - 0.5) * 10  // x
+  positions[i * 3 + 1] = (Math.random() - 0.5) * 10  // y
+  positions[i * 3 + 2] = (Math.random() - 0.5) * 10  // z
+
+  // 颜色：在靛蓝(#6366f1)和青色(#22d3ee)之间插值
+  const t = Math.random()
+  colors[i * 3]     = lerp(0.38, 0.13, t)  // r
+  colors[i * 3 + 1] = lerp(0.40, 0.83, t)  // g
+  colors[i * 3 + 2] = lerp(0.94, 0.93, t)  // b
+}
+
+const geometry = new THREE.BufferGeometry()
+geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+geometry.setAttribute('color',    new THREE.BufferAttribute(colors, 3))
+```
+
+`BufferGeometry` 直接操作 GPU Buffer，避免了面向对象的开销。`Float32Array` 是二进制数组，内存连续，传给 GPU 效率最高。
+
+## 材质配置
+
+```ts
+const material = new THREE.PointsMaterial({
+  size: 0.015,         // 每个粒子的大小（世界单位）
+  vertexColors: true,  // 使用每个顶点自己的颜色
+  transparent: true,
+  opacity: 0.8,
+  sizeAttenuation: true, // 远处的粒子更小（透视效果）
+})
+
+const points = new THREE.Points(geometry, material)
+scene.add(points)
+```
+
+`THREE.Points` 就是粒子系统的核心类，它把每个顶点渲染成一个点精灵（point sprite）。
+
+## 动画：旋转 + 鼠标视差
+
+```ts
+let mouseX = 0, mouseY = 0
+
+window.addEventListener('mousemove', (e) => {
+  // 归一化到 [-0.5, 0.5]
+  mouseX = (e.clientX / window.innerWidth  - 0.5) * 0.5
+  mouseY = (e.clientY / window.innerHeight - 0.5) * 0.5
+})
+
+function animate() {
+  requestAnimationFrame(animate)
+
+  // 缓慢自转
+  points.rotation.y += 0.0003
+  points.rotation.x += 0.0001
+
+  // 相机跟随鼠标，lerp 实现缓动
+  camera.position.x += (mouseX  - camera.position.x) * 0.05
+  camera.position.y += (-mouseY - camera.position.y) * 0.05
+  camera.lookAt(scene.position)
+
+  renderer.render(scene, camera)
+}
+```
+
+`lerp` 系数 `0.05` 控制跟随速度：每帧移动目标距离的 5%，产生平滑的缓入缓出效果。
+
+## 性能优化
+
+**1. 限制设备像素比**
+
+```ts
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+```
+
+Retina 屏幕像素比为 2-3，如果不限制，渲染面积会增大 4-9 倍。
+
+**2. 移动端降级**
+
+WebGL 在低端手机上可能触发过热保护，直接 skip：
+
+```ts
+useEffect(() => {
+  if (window.innerWidth < 768) return
+  // ... Three.js 初始化
+}, [])
+```
+
+移动端用 CSS 渐变代替，性能代价接近零。
+
+**3. 清理资源**
+
+React 组件卸载时，必须释放 GPU 资源：
+
+```ts
+return () => {
+  cancelAnimationFrame(animId)
+  geometry.dispose()    // 释放 GPU Buffer
+  material.dispose()    // 释放材质
+  renderer.dispose()    // 释放 WebGL Context
+}
+```
+
+忘记 `dispose` 会导致内存泄漏，SPA 路由来回切换会逐渐耗尽显存。
+
+## 延伸：自定义着色器
+
+想要更酷的效果？可以用 `ShaderMaterial` 替换 `PointsMaterial`：
+
+```glsl
+// vertex shader
+attribute float size;
+void main() {
+  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+  // 粒子大小随距离衰减
+  gl_PointSize = size * (300.0 / -mvPosition.z);
+  gl_Position = projectionMatrix * mvPosition;
+}
+
+// fragment shader
+void main() {
+  // 圆形粒子（默认是方形）
+  vec2 center = gl_PointCoord - 0.5;
+  float dist = length(center);
+  if (dist > 0.5) discard;
+
+  // 边缘淡出
+  float alpha = 1.0 - smoothstep(0.3, 0.5, dist);
+  gl_FragColor = vec4(1.0, 1.0, 1.0, alpha);
+}
+```
+
+自定义着色器可以实现圆形粒子、发光效果、动态大小变化等更丰富的视觉效果。
+
+---
+
+完整代码见本博客 [GitHub 仓库](https://github.com/wyihe1373-dotco)。
