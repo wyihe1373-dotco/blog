@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 
 interface Project {
   title: string
+  period?: string
   description: string
   tags: string[]
   github?: string
@@ -26,7 +27,12 @@ export default function ProjectCard({ project }: { project: Project }) {
       {/* Glow border on hover */}
       <div className="absolute inset-0 rounded-xl border border-white/10 group-hover:border-primary/50 transition-colors" />
 
-      <h3 className="text-white font-semibold text-lg mb-2 relative z-10">{project.title}</h3>
+      <div className="flex items-start justify-between mb-2 relative z-10">
+        <h3 className="text-white font-semibold text-lg">{project.title}</h3>
+        {project.period && (
+          <span className="text-xs font-mono text-slate-500 shrink-0 ml-2 mt-1">{project.period}</span>
+        )}
+      </div>
       <p className="text-slate-400 text-sm mb-4 relative z-10">{project.description}</p>
 
       <div className="flex flex-wrap gap-2 mb-4 relative z-10">

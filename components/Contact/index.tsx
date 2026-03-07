@@ -3,9 +3,9 @@ import { useRef } from 'react'
 import { motion, useInView } from 'framer-motion'
 
 const links = [
-  { label: 'GitHub', href: 'https://github.com/yourusername' },
-  { label: 'Twitter', href: 'https://twitter.com/yourusername' },
-  { label: 'Email', href: 'mailto:you@example.com' },
+  { label: 'GitHub', href: 'https://github.com/wyihe1373-dotco' },
+  { label: '微信', href: '#' },
+  { label: 'Email', href: 'mailto:wyihe1373@outlook.com' },
 ]
 
 export default function Contact() {
@@ -30,9 +30,9 @@ export default function Contact() {
         transition={{ duration: 0.6 }}
       >
         <p className="text-accent font-mono text-sm tracking-widest mb-2">GET IN TOUCH</p>
-        <h2 className="text-4xl font-bold text-white mb-4">Let&apos;s Work Together</h2>
+        <h2 className="text-4xl font-bold text-white mb-4">一起做点有趣的事</h2>
         <p className="text-slate-400 mb-10">
-          Open to frontend engineering roles, freelance projects, and interesting collaborations.
+          5 年前端经验，擅长 Vue / React / Three.js，欢迎聊聊全职机会或有趣的项目合作。
         </p>
 
         <div className="flex gap-4 justify-center flex-wrap">

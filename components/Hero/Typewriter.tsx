@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 
-const roles = ['Frontend Engineer', 'UI Crafter', 'React Developer', 'Web Performance Nerd']
+const roles = ['前端开发工程师 · 5年', 'Vue / React 全栈', 'Three.js · WebGL', 'H5 混合开发专家']
 
 export default function Typewriter() {
   const [display, setDisplay] = useState('')

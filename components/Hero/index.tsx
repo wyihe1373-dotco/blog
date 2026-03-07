@@ -20,7 +20,7 @@ export default function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
         >
-          HELLO, I&apos;M
+          Hi, 我是
         </motion.p>
 
         <motion.h1
@@ -29,7 +29,7 @@ export default function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
         >
-          Your Name
+          王一贺
         </motion.h1>
 
         <motion.div
@@ -51,13 +51,13 @@ export default function Hero() {
             href="#projects"
             className="px-6 py-3 bg-primary text-white rounded-lg font-medium hover:opacity-80 transition-opacity shadow-[0_0_20px_rgba(99,102,241,0.5)]"
           >
-            View Projects
+            查看项目
           </a>
           <a
             href="#blog"
             className="px-6 py-3 glass text-white rounded-lg font-medium hover:border-accent/50 transition-all"
           >
-            Read Blog
+            技术博客
           </a>
         </motion.div>
       </div>
