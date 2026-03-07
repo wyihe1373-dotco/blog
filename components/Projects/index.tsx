@@ -45,13 +45,24 @@ export default function Projects() {
         <h2 className="text-4xl font-bold text-white mb-12">Featured Projects</h2>
       </motion.div>
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {projects.map((project, i) => (
+      <div className="grid grid-cols-3 gap-4" style={{ gridTemplateRows: 'repeat(2, 220px)' }}>
+        {/* Featured: first project takes col-span-2 row-span-2 */}
+        <motion.div
+          className="col-span-2 row-span-2"
+          initial={{ opacity: 0, y: 40 }}
+          animate={isInView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.5 }}
+        >
+          <ProjectCard project={{ ...projects[0], featured: true }} />
+        </motion.div>
+
+        {/* Remaining cards */}
+        {projects.slice(1).map((project, i) => (
           <motion.div
             key={project.title}
             initial={{ opacity: 0, y: 40 }}
             animate={isInView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.5, delay: i * 0.1 }}
+            transition={{ duration: 0.5, delay: (i + 1) * 0.1 }}
           >
             <ProjectCard project={project} />
           </motion.div>
