@@ -39,3 +39,17 @@ body {
     background: radial-gradient(ellipse at center, rgba(99,102,241,0.15) 0%, #050510 70%);
   }
 }
+
+/* Card local spotlight */
+.tilt-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    200px at var(--card-mx, 50%) var(--card-my, 50%),
+    rgba(255,255,255,0.06),
+    transparent 80%
+  );
+  pointer-events: none;
+}
