@@ -66,7 +66,7 @@ export default function Stats() {
   const isInView = useInView(ref, { once: true, margin: '-80px' })
 
   return (
-    <section id="skills" className="py-16 md:py-20 px-6 max-w-6xl mx-auto" ref={ref}>
+    <section id="skills" className="py-10 md:py-16 px-6 max-w-6xl mx-auto" ref={ref}>
       <motion.div
         className="mb-10"
         initial={{ opacity: 0, y: 30 }}

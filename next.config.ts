@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
   output: 'export',
   trailingSlash: true,
   basePath: isGithubPages ? '/blog' : '',
+  env: { NEXT_PUBLIC_BASE_PATH: isGithubPages ? '/blog' : '' },
   pageExtensions: ['ts', 'tsx', 'md', 'mdx'],
   images: { unoptimized: true },
 }

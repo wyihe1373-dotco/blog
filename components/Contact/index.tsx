@@ -1,7 +1,8 @@
 'use client'
 import { useRef } from 'react'
 import { motion, useInView } from 'framer-motion'
-import Image from 'next/image'
+
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
 
 export default function Contact() {
   const ref = useRef(null)
@@ -29,8 +30,9 @@ export default function Contact() {
         {/* WeChat QR Code */}
         <div className="flex flex-col items-center gap-6">
           <div className="glass rounded-2xl p-4 border border-white/10">
-            <Image
-              src="/wechat-qr.png"
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`${BASE}/wechat-qr.png`}
               alt="微信二维码"
               width={200}
               height={200}

@@ -66,13 +66,13 @@ export default function Hero() {
         >
           <a
             href="#projects"
-            className="px-6 py-3 bg-primary text-white rounded-lg font-medium hover:opacity-80 transition-opacity shadow-[0_0_20px_rgba(99,102,241,0.5)] text-center"
+            className="w-36 py-3 bg-primary text-white rounded-lg font-medium hover:opacity-80 transition-opacity shadow-[0_0_20px_rgba(99,102,241,0.5)] text-center"
           >
             查看项目
           </a>
           <a
             href="#blog"
-            className="px-6 py-3 glass text-white rounded-lg font-medium hover:border-accent/50 transition-all text-center"
+            className="w-36 py-3 glass text-white rounded-lg font-medium hover:border-accent/50 transition-all text-center"
           >
             工作亮点
           </a>

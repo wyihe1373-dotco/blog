@@ -145,7 +145,7 @@ export default function Projects() {
       {/* Horizontal drag track */}
       <motion.div
         ref={trackRef}
-        className={`flex gap-5 px-6 select-none ${canDrag ? 'flex-nowrap cursor-grab active:cursor-grabbing' : 'flex-wrap justify-center'}`}
+        className={`flex gap-5 px-6 select-none flex-wrap justify-center ${canDrag ? 'sm:flex-nowrap sm:cursor-grab sm:active:cursor-grabbing' : ''}`}
         drag={canDrag ? 'x' : false}
         dragConstraints={{ right: 0, left: dragLeft }}
         dragElastic={0.08}

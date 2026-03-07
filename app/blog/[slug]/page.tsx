@@ -27,7 +27,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
       <ReadingProgress />
 
       {/* Hero header */}
-      <div className="relative overflow-hidden bg-gradient-to-b from-primary/10 via-[#050510] to-[#050510] pt-20 md:pt-24 pb-8">
+      <div className="relative overflow-hidden bg-gradient-to-b from-primary/10 via-[#050510] to-[#050510] pt-14 md:pt-16 pb-8">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-0 left-1/4 w-[180px] md:w-[300px] h-[180px] md:h-[300px] bg-primary/15 rounded-full blur-[80px] md:blur-[100px]" />
           <div className="absolute top-0 right-1/4 w-[120px] md:w-[200px] h-[120px] md:h-[200px] bg-accent/10 rounded-full blur-[60px] md:blur-[80px]" />
