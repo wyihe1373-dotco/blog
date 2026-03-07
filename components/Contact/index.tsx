@@ -1,13 +1,7 @@
 'use client'
 import { useRef } from 'react'
 import { motion, useInView } from 'framer-motion'
-import MagneticButton from '@/components/MagneticButton'
-
-const links = [
-  { label: 'GitHub', href: 'https://github.com/wyihe1373-dotco' },
-  { label: '微信', href: '#' },
-  { label: 'Email', href: 'mailto:19972037939@163.com' },
-]
+import Image from 'next/image'
 
 export default function Contact() {
   const ref = useRef(null)
@@ -25,31 +19,36 @@ export default function Contact() {
       />
 
       <motion.div
-        className="relative z-10 max-w-xl mx-auto"
+        className="relative z-10 max-w-xs mx-auto"
         initial={{ opacity: 0, y: 40 }}
         animate={isInView ? { opacity: 1, y: 0 } : {}}
         transition={{ duration: 0.6 }}
       >
-        <p className="shimmer-text font-mono text-sm tracking-widest mb-6 ">GET IN TOUCH</p>
-       
+        <p className="shimmer-text font-mono text-sm tracking-widest mb-8">GET IN TOUCH</p>
 
-        <div className="flex gap-4 justify-center flex-wrap">
-          {links.map((link) => (
-            <MagneticButton
-              key={link.label}
-              href={link.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-6 py-3 glass rounded-lg text-white font-medium hover:border-accent/50 hover:shadow-[0_0_20px_rgba(34,211,238,0.2)] transition-all"
-            >
-              {link.label}
-            </MagneticButton>
-          ))}
+        {/* WeChat QR Code */}
+        <div className="flex flex-col items-center gap-6">
+          <div className="glass rounded-2xl p-4 border border-white/10">
+            <div className="w-40 h-40 relative">
+              <Image
+                src="/wechat-qr.png"
+                alt="微信二维码"
+                fill
+                className="object-contain rounded-lg"
+              />
+            </div>
+            <p className="text-slate-400 font-mono text-xs mt-3">微信扫码添加</p>
+          </div>
+
+          {/* Phone */}
+          <a
+            href="tel:19972037939"
+            className="flex items-center gap-2 text-slate-300 hover:text-white transition-colors font-mono text-sm"
+          >
+            <span className="text-accent">📱</span>
+            19972037939
+          </a>
         </div>
-
-        <p className="text-slate-600 text-sm mt-16 font-mono">
-          Built with Next.js + Three.js — {new Date().getFullYear()}
-        </p>
       </motion.div>
     </section>
   )

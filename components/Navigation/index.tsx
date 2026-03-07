@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 
 const links = [
   { label: 'Stats', href: '#skills' },
@@ -12,6 +12,7 @@ const links = [
 export default function Navigation() {
   const [scrolled, setScrolled] = useState(false)
   const [activeSection, setActiveSection] = useState('')
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     const onScroll = () => {
@@ -41,6 +42,12 @@ export default function Navigation() {
     return () => observers.forEach(obs => obs?.disconnect())
   }, [])
 
+  // Lock body scroll when mobile menu is open
+  useEffect(() => {
+    document.body.style.overflow = menuOpen ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [menuOpen])
+
   return (
     <>
       {/* Scroll progress bar */}
@@ -51,17 +58,20 @@ export default function Navigation() {
 
       <motion.nav
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-          scrolled ? 'glass border-b border-white/10' : ''
+          scrolled || menuOpen ? 'glass border-b border-white/10' : ''
         }`}
         initial={{ y: -100 }}
         animate={{ y: 0 }}
         transition={{ duration: 0.6 }}
       >
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <a href="#" className="font-mono text-primary font-bold text-lg tracking-wider">
-            &lt;WYH /&gt;
+          {/* Logo / name */}
+          <a href="#" className="text-white font-bold font-mono text-sm tracking-wider shrink-0">
+            王一贺
           </a>
-          <div className="flex gap-8">
+
+          {/* Desktop links */}
+          <div className="hidden md:flex gap-8">
             {links.map(link => {
               const sectionId = link.href.slice(1)
               const isActive = activeSection === sectionId
@@ -84,7 +94,62 @@ export default function Navigation() {
               )
             })}
           </div>
+
+          {/* Hamburger button — mobile only */}
+          <button
+            className="md:hidden flex flex-col justify-center items-center w-8 h-8 gap-1.5 cursor-pointer"
+            onClick={() => setMenuOpen(v => !v)}
+            aria-label="Toggle menu"
+          >
+            <motion.span
+              className="block w-5 h-[2px] bg-slate-300 rounded-full origin-center"
+              animate={menuOpen ? { rotate: 45, y: 6 } : { rotate: 0, y: 0 }}
+              transition={{ duration: 0.25 }}
+            />
+            <motion.span
+              className="block w-5 h-[2px] bg-slate-300 rounded-full"
+              animate={menuOpen ? { opacity: 0, scaleX: 0 } : { opacity: 1, scaleX: 1 }}
+              transition={{ duration: 0.2 }}
+            />
+            <motion.span
+              className="block w-5 h-[2px] bg-slate-300 rounded-full origin-center"
+              animate={menuOpen ? { rotate: -45, y: -6 } : { rotate: 0, y: 0 }}
+              transition={{ duration: 0.25 }}
+            />
+          </button>
         </div>
+
+        {/* Mobile menu */}
+        <AnimatePresence>
+          {menuOpen && (
+            <motion.div
+              className="md:hidden border-t border-white/10"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div className="px-6 py-4 flex flex-col gap-1">
+                {links.map(link => {
+                  const sectionId = link.href.slice(1)
+                  const isActive = activeSection === sectionId
+                  return (
+                    <a
+                      key={link.href}
+                      href={link.href}
+                      onClick={() => setMenuOpen(false)}
+                      className="py-3 text-base font-medium border-b border-white/5 last:border-0 transition-colors duration-200"
+                      style={{ color: isActive ? '#fff' : '#94a3b8' }}
+                    >
+                      {link.label}
+                    </a>
+                  )
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.nav>
     </>
   )

@@ -1,0 +1,161 @@
+---
+title: "日常工具变了：我的 AI 辅助开发实录"
+description: "不是趋势分析，是一个前端在两年内真实改变的工作习惯——从 Copilot 补全到 CLI Agent 接管整个任务，每个转折点背后发生了什么"
+date: "2026-02-20"
+tags: ["AI", "Claude Code", "工程实践", "开发效率"]
+---
+
+## 先说结论
+
+我现在 70% 的代码不是我一行行敲出来的。
+
+这不是一句炫耀，而是一个观察：当这件事真的发生在你身上时，你会意识到「写代码」这件事的定义在悄悄变化。
+
+---
+
+## 2023 年：Copilot 是个更聪明的 Tab
+
+最开始我对 Copilot 的判断是：**高级代码补全**，仅此而已。
+
+它擅长的东西确实有用——重复结构、样板代码、同类函数的下一个变体。比如你写了 `formatCurrency`，接着写 `formatPercent`，Copilot 通常能猜对你要写什么：
+
+```typescript
+// 你写了这个
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(amount)
+}
+
+// 接着开始写 formatPercent，Copilot 直接补出来：
+function formatPercent(ratio: number) {
+  return new Intl.NumberFormat('zh-CN', { style: 'percent', maximumFractionDigits: 2 }).format(ratio)
+}
+```
+
+它减少的是**手速瓶颈**，不是思考瓶颈。你还是得想清楚要写什么，它只是帮你打得更快。
+
+真正的局限很快就出现了：一旦要跨文件、涉及业务逻辑、或者代码不符合常见模式，Copilot 的建议就开始偏。你还得花时间把它写错的部分改回来。
+
+---
+
+## 2024 年初：用 Chat 解决"卡住"问题
+
+我开始大量用 Claude/ChatGPT 不是因为它能替我写代码，而是因为它**降低了卡住的成本**。
+
+在长桥 H5 项目里，有一段 Token 刷新的逻辑让我卡了两个小时。Axios 拦截器里用 `isRefreshing` 标志位 + 请求队列来处理并发的 401——逻辑不复杂，但时序问题很难在脑子里完整模拟：
+
+```typescript
+// 第一版：明显有 race condition
+let isRefreshing = false
+axios.interceptors.response.use(null, async (error) => {
+  if (error.response?.status === 401) {
+    if (isRefreshing) return  // ← 问题：后续请求直接被丢掉了
+    isRefreshing = true
+    await refreshToken()
+    isRefreshing = false
+    return axios(error.config)
+  }
+})
+```
+
+把这段贴给 Claude，加一句"401 期间并发的请求会被丢弃，想用 Promise 队列处理"，它直接给出了带 `failedQueue` 的完整实现，还解释了为什么要在 `finally` 里清空 `isRefreshing`。
+
+我花了 15 分钟理解和调整，而不是两个小时从头推导。
+
+**这个阶段改变的不是写代码的速度，而是解决问题的路径。** 遇到陌生领域（Protobuf 解码、桌面端 IPC 通信、复杂 CSS 动画）时，对话比查文档快多了。
+
+---
+
+## 2024 年末：CLI Agent，AI 开始"动手"
+
+这是我工作习惯里真正的转折。
+
+Claude Code 装好的第一天，我在处理 BlogCarousel 的拖拽闪烁问题。以往的流程是：定位问题 → 手动修改 → 刷新验证 → 再调整。
+
+那次我直接打了一句话：
+
+> "帮我修复 BlogCarousel 的滚动闪烁。原因是 dragConstraints 在 SSR 和客户端值不一致，以及每张卡片用了独立的 whileInView 导致滚动时不断触发"
+
+Claude Code 做的事：
+1. 读 `components/Blog/Carousel.tsx`，确认问题
+2. 把 `dragConstraints` 的初始值从 `-800` 改成通过 `useEffect` 客户端计算
+3. 把每张卡片的 `whileInView` 改成父级 `useInView` + `variants` 继承
+4. 告诉我改了什么，为什么这样改
+
+整个过程我在看，但没动手。
+
+**不是因为懒**——而是因为这类"有明确目标但改法需要读代码"的任务，正好是 Agent 最擅长的地方。我更值得花精力想清楚问题本身，而不是执行修改。
+
+这之后，我开始有意识地把任务分类：**"我需要思考的"** 和 **"我想清楚了让 Agent 执行的"**。后者的比例越来越大。
+
+---
+
+## 2025 年：Skill 系统，把工作方式编码进去
+
+用 CLI Agent 几个月后，一个新问题出现了：**AI 的行为不稳定**。
+
+同样是"帮我加一个功能"，有时候它先问需求、列方案，有时候它直接开始改代码，改完之后你发现偏了。有时候它说"完成了"，但根本没跑构建验证。
+
+问题不在于模型不够聪明，而在于**没有约束**——没有规定它应该什么时候开始写代码，什么算完成。
+
+Skill 系统（Claude Code 的 superpowers 插件）做的事是：把这些约束写成结构化的指令文件。
+
+```markdown
+# brainstorming skill（精简版）
+当用户说"我想加一个功能"时：
+1. 先探索项目现有结构
+2. 提出 2-3 种方案，说明 trade-off
+3. 等用户确认后，才进入 writing-plans
+❌ 不允许直接开始写代码
+```
+
+```markdown
+# verification-before-completion skill（精简版）
+在声称"完成了"之前：
+1. 实际运行 `next build`，贴出 Build successful
+2. 截图或日志作为证据
+❌ 不允许凭空声称完成
+```
+
+我理解这个系统之后，开始把自己项目里的惯例也写进去。比如"提交前必须检查 TypeScript 错误"，"新组件必须有 forwardRef"。这些以前靠 code review 来保证，现在 Agent 自己会检查。
+
+**本质是把经验编码成约束**，不是让 AI 更聪明，而是让它更可预期。
+
+---
+
+## 2025 年末：MCP，AI 连上外部工具
+
+MCP（Model Context Protocol）是最近半年用起来的东西。简单说：让 AI 直接调用外部服务，而不只是操作本地文件。
+
+对我来说最有用的是 **Playwright MCP**。H5 项目需要频繁验证移动端布局，以往流程是：改代码 → Chrome DevTools 切手机模式 → 截图 → 发给自己手机确认。
+
+配置 Playwright MCP 之后：
+
+```
+我：帮我截一下当前主页在 iPhone 14 Pro 尺寸下的样子，
+   重点看 Projects 和 Blog 两个 section
+
+Claude Code → Playwright → 打开 localhost:3000 →
+  切换到 390x844 viewport → 截图 → 返回图片
+```
+
+AI 拿到截图之后还能直接分析布局问题并修改代码，整个循环不用离开编辑器。
+
+另一个是 **GitHub MCP**，可以直接查 Issue、读 PR diff，省掉了"把链接贴进来让它读"的步骤。
+
+MCP 让 AI 的操作边界从本地文件系统扩展到了网络服务。对于一个需要同时对接 Apifox 接口文档、GitLab CI、Figma 设计稿的前端来说，这个方向很明确。
+
+---
+
+## 我在这个过程里学到什么
+
+**AI 擅长的事有个规律**：任务越"有明确目标但执行步骤繁琐"，AI 替代的价值越高。反过来，"目标本身需要判断"的事，AI 给的方案只能作为参考。
+
+**质量把关没有被替代**。Agent 改错几十个文件只需要五分钟，而你 review 那几十个文件可能需要更久。用工具的速度越快，判断力越重要，不是越不重要。
+
+**工具链本身在快速迭代**。我上面写的这些，半年前有一半还不可用。与其判断"这个工具值不值得学"，不如把适应新工具的能力本身培养起来。
+
+---
+
+最后一件我觉得反直觉的事：**AI 并没有让我写更少的代码**。
+
+它让我写了更多代码，因为以前"太费劲、先搁着"的东西，现在可以快速验证了。这篇文章对应的这个作品集站，大概是我独自一周内完成的最大前端项目——不是因为变懒了，而是因为执行成本降下来了。

@@ -1,0 +1,135 @@
+---
+title: "OpenAPI → TypeScript：H5 项目的接口自动化实践"
+description: "200+ 条接口靠手写维护到底有多痛？从 API 文档自动生成强类型函数的选型思路、踩坑过程与最终方案"
+date: "2025-09-15"
+tags: ["TypeScript", "代码生成", "工程化", "OpenAPI"]
+---
+
+## 技术选型
+
+接口层代码生成主流有几个方向：
+
+- **swagger-codegen / openapi-generator**：Java 生态，生成的 TypeScript 质量参差不齐，定制困难
+- **手写类型 + 运行时校验（zod）**：类型准确，但还是要跟着接口文档手动维护
+- **`@ts-tool/ts-codegen-core`**：基于 OpenAPI Spec 直接生成调用函数 + 类型，支持白名单过滤，生成产物是纯 TypeScript
+
+选第三个方案的原因：生成的是**调用函数**，不是单纯的类型定义。业务代码直接 `import { getFundList }` 用，函数签名本身就是文档，不需要再看接口文档查参数名。
+
+---
+
+## 为了解决什么问题
+
+项目有 36+ 个 H5 app，每个 app 早期都自己维护 `api/` 目录：
+
+```typescript
+// apps/fund/api/fund.ts — 各 app 各自手写
+export const getFundList = (params: { account_id: string }) =>
+  axios.post<{ list: Fund[] }>('/v1/fund/list', params)
+
+// 类型是手写的，后端改字段名时这里不会报错
+// 直到运行时才发现 data.items 变成了 data.list
+```
+
+随着接口规模到 200+ 条，几个问题积累到无法忽视：
+
+1. **类型漂移**：后端改了字段名或类型，前端往往几周后才在运行时发现
+2. **重复样板**：每个 app 都在写相同的 `params → axios → response` 封装
+3. **跨 app 不一致**：同一个接口，不同 app 里的参数命名、错误处理方式都不一样
+
+---
+
+## 实际开发中碰到的问题
+
+### 问题一：全量生成太重，每个 app 只用一部分接口
+
+API 文档平台有几百个接口，如果全量生成，产物文件会非常大，而每个 app 实际只依赖其中一小部分。
+
+解法是在 `client.config.js` 里维护白名单，生成时只包含列出的路径：
+
+```javascript
+module.exports = {
+  whiteList: [
+    '/v1/fund/list',
+    '/v1/fund/order/submit',
+    '/v1/fund/holding/list',
+    '/v1/member/info',
+    // ... 约 200 条
+  ]
+}
+```
+
+白名单本身也是文档——一眼能看出这个项目依赖哪些接口。
+
+### 问题二：多网关场景
+
+桌面端有独立的 SaaS 网关（鉴权逻辑不同，接口路径也不同），不能和 portal 网关混用。最终用两个配置文件分别生成到不同目录：
+
+```javascript
+const gateways = [
+  { name: 'portal', projectId: 'xxx', whiteList },
+  { name: 'saas',   projectId: 'yyy', whiteList: saasWhiteList },
+]
+await codegen({ gateways, headers: { Authorization: `Bearer ${API_DOC_TOKEN}` } })
+```
+
+### 问题三：响应类型在调用侧不好引用
+
+生成的函数有完整的泛型类型，但调用侧如果要声明变量类型，需要手写一遍响应结构——等于部分类型还是手写的。
+
+解法是提供两个类型工具，从函数签名里反向提取：
+
+```typescript
+// 提取响应类型
+export type RequestResponseType<T extends (...args: any[]) => any> =
+  Exclude<Awaited<ReturnType<T>>['1'], null>
+
+// 提取请求参数类型
+export type RequestParamsType<T extends (...args: any[]) => any> =
+  Exclude<Parameters<T>[0] extends { requestBody?: object }
+    ? Parameters<T>[0]['requestBody']
+    : Parameters<T>[0],
+  undefined>
+```
+
+---
+
+## 解决方案：一条命令同步所有接口
+
+```javascript
+// packages/client/tools/gen.js
+const { codegen } = require('@ts-tool/ts-codegen-core')
+const { whiteList } = require('../client.config')
+
+await codegen({
+  gateways: [{ name: 'portal', whiteList }],
+  headers: { Authorization: `Bearer ${API_DOC_TOKEN}` }
+})
+```
+
+运行 `yarn workspace @pkgs/client gen` 后，生成的函数长这样：
+
+```typescript
+// 自动生成，勿手改
+export const getFundHoldingList = createRequest<
+  { requestBody?: { account_id: string; page?: number } },
+  { code: number; data: { list: FundHolding[]; total: number }; message: string }
+>('getFundHoldingList', ({ requestBody }) => ({
+  url: `/v1/fund/holding/list`,
+  method: 'POST',
+  data: requestBody,
+}))
+```
+
+业务侧调用，类型全程推导，不需要手写任何 interface：
+
+```typescript
+import { getFundHoldingList, type RequestResponseType } from '@pkgs/client'
+
+type HoldingResp = RequestResponseType<typeof getFundHoldingList>
+// HoldingResp = { list: FundHolding[]; total: number }
+
+const [err, data] = await getFundHoldingList({ requestBody: { account_id } })
+// data.list / data.total 有完整类型提示
+```
+
+后端每次迭代接口后，前端跑一次 `yarn gen`，TypeScript 编译器会立刻标出所有受影响的调用点——类型漂移从根本上消除，目前覆盖 200+ 条接口。

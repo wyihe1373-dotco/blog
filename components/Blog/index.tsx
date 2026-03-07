@@ -5,12 +5,11 @@ export default function Blog() {
   const posts = getAllPosts()
 
   return (
-    <section id="blog" className="py-24 overflow-hidden">
+    <section id="blog" className="py-12 md:py-24 overflow-hidden">
       <div className="px-6 max-w-6xl mx-auto mb-10">
-        <p className="shimmer-text font-mono text-sm tracking-widest mb-2">WRITING</p>
+        <p className="shimmer-text font-mono text-sm tracking-widest mb-2">HIGHLIGHTS</p>
         <div className="flex items-end justify-between">
-          <h2 className="text-5xl font-bold text-white tracking-tight">Latest Posts</h2>
-          <span className="text-slate-500 text-sm font-mono hidden md:block">← drag to explore →</span>
+          <h2 className="text-3xl md:text-5xl font-bold text-white tracking-tight">工作亮点</h2>
         </div>
       </div>
       <BlogCarousel posts={posts} />

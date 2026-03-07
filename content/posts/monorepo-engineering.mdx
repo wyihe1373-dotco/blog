@@ -1,0 +1,128 @@
+---
+title: "Monorepo 工程体系：大型 H5 平台的自动化基础设施"
+description: "36+ 应用、39 个共享包的大仓为什么构建会乱、架构会腐化、CI 会变慢——以及我们是怎么一个个修掉的"
+date: "2025-10-20"
+tags: ["Monorepo", "工程化", "CI/CD", "工具链"]
+---
+
+## 技术选型
+
+多个 H5 app 共享大量代码时，有两个方向：
+
+- **Multi-repo**：每个 app 独立仓库，共享代码发 npm 包。问题是版本碎片化——10 个 app 可能依赖同一个包的 10 个不同版本，联调改动要发版才能生效
+- **Monorepo（Yarn Workspaces）**：所有代码在同一仓库，共享包直接 `workspace:*` 引用，改动即时生效
+
+选 Yarn Workspaces 而非 Nx/Turborepo 的原因：项目已有 Yarn 基础设施，Workspaces 是内置能力，引入 Nx 需要迁移成本且在当时项目规模下收益不明显。但 Yarn 原生不解决构建顺序问题，这部分我们自己处理。
+
+---
+
+## 为了解决什么问题
+
+随着 app 数量增长到 36+、共享包到 39 个，三个问题变得严重：
+
+1. **构建顺序混乱**：`apps/fund` 依赖 `@pkgs/devkit`，但 `devkit` 需要先编译。新人第一次 `yarn dev fund` 必然报找不到模块
+2. **架构边界失控**：SDK 层不该引用业务 package，但没有任何机制阻止。出现了 SDK 里悄悄 import 业务逻辑的情况，只有 CI 跑完才发现
+3. **开发体验慢**：Prettier + ESLint 在 100+ 文件上跑要十几秒，提交前的 lint 耗时影响开发节奏
+
+---
+
+## 实际开发中碰到的问题
+
+### 问题一：构建顺序没有标准解法
+
+Yarn Workspaces 的 `yarn workspaces run build` 是并行的，不保证顺序。`@pkgs/devkit` 还没编译，`apps/fund` 已经在跑 TypeScript 编译并试图 import `dist/` 下的文件——必然失败。
+
+手动文档说明"先 build devkit 再 build fund"是不可靠的，换个环境就会忘。
+
+我们在 `package.json` 加了一个自定义字段 `buildDependencies`，声明构建前置依赖：
+
+```json
+{
+  "name": "fund",
+  "buildDependencies": ["devkit", "components"]
+}
+```
+
+然后写了一个 CLI，执行 `yarn dev fund` 时自动检查前置依赖是否已编译，按需触发构建：
+
+```typescript
+const needBuild: string[] = []
+buildDependencies?.forEach((dep: string) => {
+  if (!checkBuildDependencie(dep)) needBuild.push(dep)
+})
+if (needBuild.length) {
+  // 先依次构建缺失的前置依赖
+  const cmds = needBuild.map((d, i) => [i === 0 ? null : 'yarn', action, d].filter(Boolean))
+  cmds.push(['yarn', 'workspace', app, 'run', action])
+  yarnRun(cmds.flat(), envVars)
+}
+```
+
+### 问题二：架构边界靠 Code Review 人工保证
+
+SDK 层（`@sdk/app`）是基础设施，不应该依赖业务 package（`@pkgs/*`），否则会形成循环依赖，也让 SDK 难以独立维护。
+
+但这个约束只写在文档里，没有技术手段阻止。某次 Review 发现 SDK 里 import 了一个业务工具函数，追查后发现已经存在了几个月。
+
+解法是用 import-lint 把架构规则写成配置，每次提交触发检查：
+
+```json
+{
+  "rules": {
+    "sdk/app": {
+      "mode": "blacklist",
+      "disallow": ["@pkgs/*"],
+      "allow": ["@pkgs/constants", "@pkgs/theme"]
+    }
+  }
+}
+```
+
+配合 pre-commit hook，只扫描 git 暂存区的文件，基本不影响提交速度：
+
+```typescript
+const files = options.staged
+  ? filterFilesByProject(getStagedFiles(), projectPath)
+  : getProjectFiles(projectPath, globalConfig, rule.exclude)
+```
+
+### 问题三：Prettier 在大仓跑太慢
+
+大仓有 100+ 文件需要格式化时，Node.js 实现的 Prettier 每次全量跑需要十几秒。开发者开始绕过 lint，`--no-verify` 提交，反而带来更多问题。
+
+换成 Rust 实现的 Oxc 工具链（`oxfmt` + `oxlint`）后，同样的文件集速度提升了 10-50x，pre-commit 的体感接近无感。
+
+---
+
+## 解决方案代码汇总
+
+自定义 CLI 构建编排：
+
+```typescript
+// scripts/cli/index.ts
+const runPackagePreSetScript = async () => {
+  const { buildDependencies } = await getPkgJson(dir)
+  const needBuild = buildDependencies?.filter((dep: string) => !checkBuildDependencie(dep)) ?? []
+  if (needBuild.length) {
+    const cmds = needBuild.map((d: string, i: number) =>
+      [i === 0 ? null : 'yarn', action, d].filter(Boolean)
+    )
+    cmds.push(['yarn', 'workspace', app, 'run', action])
+    yarnRun(cmds.flat(), envVars)
+  } else {
+    yarnRun(['workspace', app, 'run', action], envVars)
+  }
+}
+```
+
+GitLab CI 接入双模型 AI Review，每次 MR 自动触发，结果 comment 到 MR 上：
+
+```yaml
+ai-review-sonnet:
+  stage: review
+  extends: .ai-review
+  variables:
+    AI_REVIEW_MODEL: claude-sonnet-4-20250514
+```
+
+三个方案各自独立，可以按需引入，也可以同时使用。核心思路一样：**把人工约束变成工具约束**，文档里写的规范，靠机器来执行。

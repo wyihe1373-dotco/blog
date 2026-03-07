@@ -1,14 +1,16 @@
 'use client'
-import dynamic from 'next/dynamic'
 import { motion } from 'framer-motion'
 import Typewriter from './Typewriter'
-
-const ParticleCanvas = dynamic(() => import('./ParticleCanvas'), { ssr: false })
 
 export default function Hero() {
   return (
     <section className="relative h-screen flex items-center justify-center overflow-hidden hero-bg">
-      <ParticleCanvas />
+      {/* Aurora background */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-[200px] h-[200px] md:w-[500px] md:h-[500px] bg-primary/20 rounded-full blur-[80px] md:blur-[120px] animate-pulse" />
+        <div className="absolute top-1/3 right-1/4 w-[160px] h-[160px] md:w-[400px] md:h-[400px] bg-accent/15 rounded-full blur-[60px] md:blur-[100px] animate-pulse" style={{ animationDelay: '1.5s', animationDuration: '4s' }} />
+        <div className="absolute bottom-1/3 left-1/3 w-[140px] h-[140px] md:w-[350px] md:h-[350px] bg-purple-500/10 rounded-full blur-[50px] md:blur-[90px] animate-pulse" style={{ animationDelay: '3s', animationDuration: '5s' }} />
+      </div>
 
       {/* Gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#050510]" />
@@ -24,7 +26,7 @@ export default function Hero() {
         </motion.p>
 
         <motion.h1
-          className="text-5xl md:text-7xl font-bold text-white mb-4 flex justify-center gap-[0.05em]"
+          className="text-4xl md:text-7xl font-bold text-white mb-4 flex justify-center gap-[0.05em]"
           initial="hidden"
           animate="visible"
           variants={{
@@ -57,22 +59,22 @@ export default function Hero() {
         </motion.div>
 
         <motion.div
-          className="flex gap-4 justify-center"
+          className="flex flex-col sm:flex-row gap-3 justify-center"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.8 }}
         >
           <a
             href="#projects"
-            className="px-6 py-3 bg-primary text-white rounded-lg font-medium hover:opacity-80 transition-opacity shadow-[0_0_20px_rgba(99,102,241,0.5)]"
+            className="px-6 py-3 bg-primary text-white rounded-lg font-medium hover:opacity-80 transition-opacity shadow-[0_0_20px_rgba(99,102,241,0.5)] text-center"
           >
             查看项目
           </a>
           <a
             href="#blog"
-            className="px-6 py-3 glass text-white rounded-lg font-medium hover:border-accent/50 transition-all"
+            className="px-6 py-3 glass text-white rounded-lg font-medium hover:border-accent/50 transition-all text-center"
           >
-            技术博客
+            工作亮点
           </a>
         </motion.div>
       </div>
