@@ -11,6 +11,7 @@ const links = [
 
 export default function Navigation() {
   const [scrolled, setScrolled] = useState(false)
+  const [activeSection, setActiveSection] = useState('')
 
   useEffect(() => {
     const onScroll = () => {
@@ -23,6 +24,21 @@ export default function Navigation() {
     }
     window.addEventListener('scroll', onScroll)
     return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    const sections = ['skills', 'projects', 'blog', 'contact']
+    const observers = sections.map(id => {
+      const el = document.getElementById(id)
+      if (!el) return null
+      const obs = new IntersectionObserver(
+        ([entry]) => { if (entry.isIntersecting) setActiveSection(id) },
+        { rootMargin: '-40% 0px -55% 0px' }
+      )
+      obs.observe(el)
+      return obs
+    })
+    return () => observers.forEach(obs => obs?.disconnect())
   }, [])
 
   return (
@@ -46,15 +62,27 @@ export default function Navigation() {
             &lt;WYH /&gt;
           </a>
           <div className="flex gap-8">
-            {links.map(link => (
-              <a
-                key={link.href}
-                href={link.href}
-                className="text-sm text-slate-300 hover:text-accent transition-colors duration-200"
-              >
-                {link.label}
-              </a>
-            ))}
+            {links.map(link => {
+              const sectionId = link.href.slice(1)
+              const isActive = activeSection === sectionId
+              return (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  className="relative text-sm transition-colors duration-200 py-1"
+                  style={{ color: isActive ? '#fff' : '#94a3b8' }}
+                >
+                  {link.label}
+                  {isActive && (
+                    <motion.div
+                      layoutId="nav-underline"
+                      className="absolute -bottom-1 left-0 right-0 h-[2px] bg-gradient-to-r from-primary to-accent rounded-full"
+                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                    />
+                  )}
+                </a>
+              )
+            })}
           </div>
         </div>
       </motion.nav>
