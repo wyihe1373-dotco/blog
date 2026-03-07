@@ -5,7 +5,7 @@ export default function Blog() {
   const posts = getAllPosts()
 
   return (
-    <section id="blog" className="py-12 md:py-24 overflow-hidden">
+    <section id="blog" className="py-16 md:py-24 overflow-hidden">
       <div className="px-6 max-w-6xl mx-auto mb-10">
         <p className="shimmer-text font-mono text-sm tracking-widest mb-2">HIGHLIGHTS</p>
         <div className="flex items-end justify-between">

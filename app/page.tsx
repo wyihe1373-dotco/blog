@@ -7,7 +7,7 @@ import Contact from '@/components/Contact'
 
 export default function Home() {
   return (
-    <main className="relative">
+    <main className="relative overflow-x-hidden">
       <Navigation />
       <Hero />
       <Stats />

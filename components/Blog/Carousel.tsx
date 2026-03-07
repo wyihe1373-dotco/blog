@@ -30,7 +30,7 @@ export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
   return (
     <motion.div
       ref={ref}
-      className={`flex gap-5 px-6 select-none flex-wrap justify-center ${canDrag ? 'cursor-grab active:cursor-grabbing' : 'flex-wrap justify-center'}`}
+      className={`flex gap-5 px-6 select-none ${canDrag ? 'flex-nowrap cursor-grab active:cursor-grabbing' : 'flex-wrap justify-center'}`}
       drag={canDrag ? 'x' : false}
       dragConstraints={{ right: 0, left: dragLeft }}
       dragElastic={0.08}
@@ -40,44 +40,60 @@ export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
       animate={inView ? 'visible' : 'hidden'}
     >
       {posts.map((post, i) => (
-        <MotionLink
+        <motion.div
           key={post.slug}
-          href={`/blog/${post.slug}/`}
-          className="glass rounded-2xl p-6 shrink-0 group hover:border-primary/50 transition-all block"
+          className="relative shrink-0 rounded-2xl overflow-hidden p-px"
           style={{ width: cardW }}
           variants={{
             hidden: { opacity: 0, y: 30 },
             visible: { opacity: 1, y: 0 },
           }}
           transition={{ delay: i * 0.1, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          onClick={(e) => {
-            const el = ref.current
-            if (!el) return
-            const match = el.style.transform?.match(/-?\d+\.?\d*/)
-            const delta = Math.abs(parseFloat(match?.[0] ?? '0'))
-            if (delta > 5) e.preventDefault()
-          }}
         >
-          <div className="flex items-center justify-between mb-3 flex-wrap">
-            <div className="flex gap-2 flex-wrap">
-              {post.tags.slice(0, 2).map(tag => (
-                <span key={tag} className="text-xs font-mono text-accent bg-accent/10 px-2 py-1 rounded">
-                  {tag}
-                </span>
-              ))}
+          {/* Rotating light band */}
+          <motion.div
+            className="absolute -inset-full pointer-events-none"
+            style={{
+              background: 'conic-gradient(from 0deg, transparent 0%, #6366f1 15%, #a78bfa 22%, #22d3ee 28%, transparent 40%)',
+            }}
+            animate={{ rotate: 360 }}
+            transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+          />
+
+          {/* Card */}
+          <MotionLink
+            href={`/blog/${post.slug}/`}
+            className="relative rounded-[14px] p-6 group transition-all block h-full"
+            style={{ background: 'rgba(7, 7, 24, 0.95)', backdropFilter: 'blur(12px)' }}
+            onClick={(e) => {
+              const el = ref.current
+              if (!el) return
+              const match = el.style.transform?.match(/-?\d+\.?\d*/)
+              const delta = Math.abs(parseFloat(match?.[0] ?? '0'))
+              if (delta > 5) e.preventDefault()
+            }}
+          >
+            <div className="flex items-center justify-between mb-3 flex-wrap">
+              <div className="flex gap-2 flex-wrap">
+                {post.tags.slice(0, 2).map(tag => (
+                  <span key={tag} className="text-xs font-mono text-accent bg-accent/10 px-2 py-1 rounded">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+              <span className="text-xs text-slate-500 font-mono shrink-0 ml-2">{post.readingTime}</span>
             </div>
-            <span className="text-xs text-slate-500 font-mono shrink-0 ml-2">{post.readingTime}</span>
-          </div>
 
-          <h3 className="text-white font-semibold text-lg mb-2 group-hover:text-primary transition-colors leading-tight">
-            {post.title}
-          </h3>
-          <p className="text-slate-400 text-sm mb-4 line-clamp-3">{post.description}</p>
+            <h3 className="text-white font-semibold text-lg mb-2 group-hover:text-primary transition-colors leading-tight">
+              {post.title}
+            </h3>
+            <p className="text-slate-400 text-sm mb-4 line-clamp-3">{post.description}</p>
 
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-500 font-mono">{post.date}</span>
-          </div>
-        </MotionLink>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500 font-mono">{post.date}</span>
+            </div>
+          </MotionLink>
+        </motion.div>
       ))}
     </motion.div>
   )

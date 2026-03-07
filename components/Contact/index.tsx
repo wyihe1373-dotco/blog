@@ -8,7 +8,7 @@ export default function Contact() {
   const isInView = useInView(ref, { once: true, margin: '-100px' })
 
   return (
-    <section id="contact" className="relative py-24 px-6 text-center overflow-hidden" ref={ref}>
+    <section id="contact" className="relative py-16 md:py-24 px-6 text-center overflow-hidden" ref={ref}>
       {/* Grid background */}
       <div
         className="absolute inset-0 opacity-5"

@@ -38,7 +38,7 @@ function ProjectCard({ project, index }: { project: typeof projects[0]; index: n
 
   return (
     <motion.div
-      className="shrink-0 w-[calc(100vw-3rem)] sm:w-[420px] md:w-[480px]"
+      className="shrink-0 relative overflow-hidden rounded-2xl p-px w-[calc(100vw-3rem)] sm:w-105 md:w-120"
       variants={{
         hidden: { opacity: 0, x: 50 },
         visible: { opacity: 1, x: 0 },
@@ -49,16 +49,26 @@ function ProjectCard({ project, index }: { project: typeof projects[0]; index: n
         ease: [0.16, 1, 0.3, 1],
       }}
     >
+      {/* Rotating light band */}
+      <motion.div
+        className="absolute -inset-full pointer-events-none"
+        style={{
+          background: 'conic-gradient(from 0deg, transparent 0%, #6366f1 15%, #a78bfa 22%, #22d3ee 28%, transparent 40%)',
+        }}
+        animate={{ rotate: 360 }}
+        transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+      />
+
       <div
         ref={ref}
         onMouseMove={onMouseMove}
         onMouseLeave={onMouseLeave}
-        className="tilt-card glass rounded-2xl relative overflow-hidden group cursor-default min-h-70 flex flex-col p-7"
-        style={{ transition: 'transform 0.25s ease' }}
+        className="tilt-card relative rounded-[14px] overflow-hidden group cursor-default min-h-70 flex flex-col p-7"
+        style={{ background: 'rgba(7, 7, 24, 0.95)', backdropFilter: 'blur(12px)', transition: 'transform 0.25s ease' }}
       >
         {/* Gradient halo */}
         <div className={`absolute -top-20 -right-20 w-64 h-64 rounded-full opacity-15 blur-3xl group-hover:opacity-30 transition-opacity duration-500 ${project.gradient}`} />
-        <div className="absolute inset-0 rounded-2xl border border-white/10 group-hover:border-white/20 transition-colors duration-300" />
+        <div className="absolute inset-0 rounded-[14px] border border-white/10 group-hover:border-white/20 transition-colors duration-300" />
 
         {/* Number watermark */}
         <span className="absolute top-5 right-6 text-6xl font-bold text-white/[0.04] select-none font-mono leading-none">
@@ -100,6 +110,7 @@ export default function Projects() {
   const trackRef = useRef<HTMLDivElement>(null)
   const sectionRef = useRef<HTMLDivElement>(null)
   const [dragLeft, setDragLeft] = useState(-800)
+  const [canDrag, setCanDrag] = useState(true)
   const inView = useInView(sectionRef, { once: true, margin: '-100px 0px' })
 
   useEffect(() => {
@@ -108,7 +119,12 @@ export default function Projects() {
     const gap = 20
     const totalW = projects.length * (cardW + gap) - gap
     const overflow = totalW - vw + 48
-    setDragLeft(overflow > 0 ? -overflow : 0)
+    if (overflow <= 0) {
+      setCanDrag(false)
+      setDragLeft(0)
+    } else {
+      setDragLeft(-overflow)
+    }
   }, [])
 
   // GSAP-style scroll progress for header parallax
@@ -117,7 +133,7 @@ export default function Projects() {
   const headerY = useSpring(rawY, { stiffness: 80, damping: 20 })
 
   return (
-    <section id="projects" className="py-12 md:py-24 overflow-hidden" ref={sectionRef}>
+    <section id="projects" className="py-16 md:py-24 overflow-hidden" ref={sectionRef}>
       {/* Header with parallax */}
       <motion.div className="px-6 max-w-6xl mx-auto mb-12" style={{ y: headerY }}>
         <p className="shimmer-text font-mono text-sm tracking-widest mb-2">PORTFOLIO</p>
@@ -129,8 +145,8 @@ export default function Projects() {
       {/* Horizontal drag track */}
       <motion.div
         ref={trackRef}
-        className="flex gap-5 px-6 cursor-grab active:cursor-grabbing select-none flex-wrap justify-center  "
-        drag="x"
+        className={`flex gap-5 px-6 select-none ${canDrag ? 'flex-nowrap cursor-grab active:cursor-grabbing' : 'flex-wrap justify-center'}`}
+        drag={canDrag ? 'x' : false}
         dragConstraints={{ right: 0, left: dragLeft }}
         dragElastic={0.08}
         dragTransition={{ bounceStiffness: 300, bounceDamping: 30 }}

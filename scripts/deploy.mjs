@@ -46,6 +46,15 @@ function collectFiles(dir, base = dir) {
   })
 }
 
+// 浏览器可直接展示的类型，必须 inline 否则会触发下载
+const INLINE_TYPES = new Set([
+  'text/html; charset=utf-8',
+  'text/css; charset=utf-8',
+  'application/javascript; charset=utf-8',
+  'image/png', 'image/jpeg', 'image/gif', 'image/svg+xml',
+  'image/x-icon', 'image/webp',
+])
+
 /** 上传单个文件 */
 function uploadFile(localPath) {
   const key = localPath.replace(OUT_DIR, '').replace(/\\/g, '/').replace(/^\//, '')
@@ -58,11 +67,12 @@ function uploadFile(localPath) {
       Region: REGION,
       Key: key,
       Body: fs.createReadStream(localPath),
-      ContentType: contentType,
       Headers: {
+        'Content-Type': contentType,
+        'Content-Disposition': INLINE_TYPES.has(contentType) ? 'inline' : 'attachment',
         'Cache-Control': key.startsWith('_next/static/')
-          ? 'public, max-age=31536000, immutable'  // 带 hash 的静态资源永久缓存
-          : 'public, max-age=0, must-revalidate',  // HTML 等不缓存
+          ? 'public, max-age=31536000, immutable'
+          : 'public, max-age=0, must-revalidate',
       },
     }, (err) => {
       if (err) { console.error(`✗ ${key}`, err.message); reject(err) }
