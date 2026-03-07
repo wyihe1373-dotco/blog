@@ -3,6 +3,13 @@ import path from 'path'
 import matter from 'gray-matter'
 import { MDXRemote } from 'next-mdx-remote/rsc'
 
+export function generateStaticParams() {
+  const files = fs.readdirSync(path.join(process.cwd(), 'content/posts'))
+  return files
+    .filter(f => f.endsWith('.mdx'))
+    .map(f => ({ slug: f.replace('.mdx', '') }))
+}
+
 export default async function BlogPost({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const file = fs.readFileSync(
