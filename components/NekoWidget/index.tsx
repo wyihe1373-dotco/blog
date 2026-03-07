@@ -1,17 +1,12 @@
 'use client'
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 type State = 'sleep' | 'idle' | 'alert' | 'run'
-type Dir = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw'
 
-const SPEED = 3
-const WAKE_DIST = 180
-const REACH_DIST = 24
-const SLEEP_AFTER = 5000
-const SIZE = 32
+const SCALE = 2
+const SIZE = 16 * SCALE
 
-/* ── pixel cat frames (16×16 grid, scaled ×2) ─────────────────────── */
-// Each frame is a 16×16 array: 0=transparent, 1=body, 2=outline, 3=eye/detail
+/* pixel frames 16×16: 0=transparent 1=body 2=outline 3=accent */
 const FRAMES: Record<string, number[][]> = {
   sit: [
     [0,0,0,0,0,2,2,0,0,2,2,0,0,0,0,0],
@@ -61,11 +56,11 @@ const FRAMES: Record<string, number[][]> = {
     [0,0,0,2,1,1,2,0,0,0,0,0,0,0,0,0],
     [0,0,2,1,1,1,1,2,0,0,0,0,0,0,0,0],
     [0,2,1,1,1,1,1,1,2,0,0,0,0,0,0,0],
-    [0,0,2,1,1,1,1,2,0,0,0,0,2,1,1,2],
-    [0,0,0,2,2,1,1,1,1,1,1,2,1,1,1,2],
+    [0,0,2,1,1,1,1,2,0,0,0,2,1,1,2,0],
+    [0,0,0,2,2,1,1,1,1,1,2,1,1,1,1,2],
     [0,0,0,0,0,2,1,1,1,1,1,1,1,1,2,0],
-    [0,0,0,0,0,0,2,1,1,1,1,1,1,2,0,0],
-    [0,0,0,0,0,0,0,2,2,2,2,2,2,0,0,0],
+    [0,0,0,0,0,0,2,1,1,1,1,1,2,0,0,0],
+    [0,0,0,0,0,0,0,2,2,2,2,2,0,0,0,0],
   ],
   run2: [
     [0,0,0,0,0,2,2,0,0,2,2,0,0,0,0,0],
@@ -87,45 +82,36 @@ const FRAMES: Record<string, number[][]> = {
   ],
 }
 
-const COLORS = ['transparent', '#e2e8f0', '#475569', '#6366f1']
+const COLORS = ['transparent', '#e2e8f0', '#64748b', '#6366f1']
 
-function drawFrame(ctx: CanvasRenderingContext2D, frame: number[][], scale: number) {
-  ctx.clearRect(0, 0, 16 * scale, 16 * scale)
+function drawFrame(ctx: CanvasRenderingContext2D, frame: number[][], flipX: boolean) {
+  ctx.clearRect(0, 0, SIZE, SIZE)
+  ctx.save()
+  if (flipX) {
+    ctx.translate(SIZE, 0)
+    ctx.scale(-1, 1)
+  }
   for (let row = 0; row < 16; row++) {
     for (let col = 0; col < 16; col++) {
       const v = frame[row][col]
       if (v === 0) continue
       ctx.fillStyle = COLORS[v]
-      ctx.fillRect(col * scale, row * scale, scale, scale)
+      ctx.fillRect(col * SCALE, row * SCALE, SCALE, SCALE)
     }
   }
+  ctx.restore()
 }
 
 export default function NekoWidget() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const posRef = useRef({ x: typeof window !== 'undefined' ? window.innerWidth - 80 : 400, y: typeof window !== 'undefined' ? window.innerHeight - 80 : 400 })
-  const cursorRef = useRef({ x: 0, y: 0 })
   const stateRef = useRef<State>('sleep')
-  const frameRef = useRef(0)
-  const tickRef = useRef(0)
+  const runFrameRef = useRef(0)
   const sleepTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const rafRef = useRef<number | undefined>(undefined)
+  const cursorRef = useRef({ x: -999, y: -999 })
+  const catPosRef = useRef({ x: 0, y: 0 })  // will init on mount
   const [visible, setVisible] = useState(true)
-  const scale = 2
-
-  const getDir = useCallback((): Dir => {
-    const dx = cursorRef.current.x - posRef.current.x
-    const dy = cursorRef.current.y - posRef.current.y
-    const angle = Math.atan2(dy, dx) * (180 / Math.PI)
-    if (angle > -22.5 && angle <= 22.5)  return 'e'
-    if (angle > 22.5  && angle <= 67.5)  return 'se'
-    if (angle > 67.5  && angle <= 112.5) return 's'
-    if (angle > 112.5 && angle <= 157.5) return 'sw'
-    if (angle > 157.5 || angle <= -157.5) return 'w'
-    if (angle > -157.5 && angle <= -112.5) return 'nw'
-    if (angle > -112.5 && angle <= -67.5)  return 'n'
-    return 'ne'
-  }, [])
+  const [flipX, setFlipX] = useState(false)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -134,83 +120,73 @@ export default function NekoWidget() {
     if (!ctx) return
     ctx.imageSmoothingEnabled = false
 
-    const onMouseMove = (e: MouseEvent) => {
-      cursorRef.current = { x: e.clientX, y: e.clientY }
-      if (stateRef.current === 'sleep') {
-        const dx = e.clientX - posRef.current.x
-        const dy = e.clientY - posRef.current.y
-        if (Math.sqrt(dx * dx + dy * dy) < WAKE_DIST) {
-          stateRef.current = 'alert'
-          clearTimeout(sleepTimerRef.current)
-        }
-      }
-      resetSleepTimer()
-    }
+    // init cat position bottom-right
+    catPosRef.current = { x: window.innerWidth - 60, y: window.innerHeight - 60 }
 
-    const resetSleepTimer = () => {
+    const resetSleep = () => {
       clearTimeout(sleepTimerRef.current)
       sleepTimerRef.current = setTimeout(() => {
         stateRef.current = 'sleep'
-        frameRef.current = 0
-      }, SLEEP_AFTER)
+      }, 6000)
     }
 
+    const onMouseMove = (e: MouseEvent) => {
+      cursorRef.current = { x: e.clientX, y: e.clientY }
+      if (stateRef.current === 'sleep') stateRef.current = 'alert'
+      resetSleep()
+    }
     window.addEventListener('mousemove', onMouseMove)
+    resetSleep()
 
+    let tick = 0
     const loop = () => {
-      tickRef.current++
-
-      const pos = posRef.current
-      const cursor = cursorRef.current
-      const dx = cursor.x - pos.x
-      const dy = cursor.y - pos.y
+      tick++
+      const cat = catPosRef.current
+      const cur = cursorRef.current
+      const dx = cur.x - cat.x
+      const dy = cur.y - cat.y
       const dist = Math.sqrt(dx * dx + dy * dy)
 
-      let frameName = 'sit'
+      // decide flip direction based on cursor
+      if (Math.abs(dx) > 4) setFlipX(dx < 0)
 
-      if (stateRef.current === 'sleep') {
+      let frameName: string
+      const state = stateRef.current
+
+      if (state === 'sleep') {
         frameName = 'sleep'
-      } else if (stateRef.current === 'alert') {
+      } else if (state === 'alert') {
         frameName = 'sit'
-        if (dist > REACH_DIST + 10) {
-          stateRef.current = 'run'
-        }
-      } else if (stateRef.current === 'run') {
-        if (dist <= REACH_DIST) {
+        if (dist > 40) stateRef.current = 'run'
+      } else if (state === 'run') {
+        if (dist < 36) {
           stateRef.current = 'idle'
-          frameRef.current = 0
         } else {
           // move toward cursor
-          const nx = dx / dist
-          const ny = dy / dist
-          posRef.current = { x: pos.x + nx * SPEED, y: pos.y + ny * SPEED }
-          canvas.style.left = `${posRef.current.x - SIZE / 2}px`
-          canvas.style.top  = `${posRef.current.y - SIZE / 2}px`
+          const speed = Math.min(4, dist * 0.08)
+          catPosRef.current = {
+            x: cat.x + (dx / dist) * speed,
+            y: cat.y + (dy / dist) * speed,
+          }
+          // clamp to viewport
+          catPosRef.current.x = Math.max(20, Math.min(window.innerWidth  - 20, catPosRef.current.x))
+          catPosRef.current.y = Math.max(20, Math.min(window.innerHeight - 20, catPosRef.current.y))
 
-          // alternate run frames every 8 ticks
-          if (tickRef.current % 8 === 0) frameRef.current = frameRef.current === 0 ? 1 : 0
-          frameName = frameRef.current === 0 ? 'run1' : 'run2'
+          if (canvas.parentElement) {
+            canvas.parentElement.style.left = `${catPosRef.current.x - SIZE / 2}px`
+            canvas.parentElement.style.top  = `${catPosRef.current.y - SIZE / 2}px`
+          }
         }
+        // alternate run frames every 8 ticks
+        if (tick % 8 === 0) runFrameRef.current = runFrameRef.current === 0 ? 1 : 0
+        frameName = runFrameRef.current === 0 ? 'run1' : 'run2'
       } else {
-        // idle
+        // idle: stay put, check if cursor moved far
         frameName = 'sit'
-        if (dist > WAKE_DIST) {
-          stateRef.current = 'run'
-        }
+        if (dist > 60) stateRef.current = 'run'
       }
 
-      // flip horizontally if going left
-      const dir = getDir()
-      const flipX = ['w', 'nw', 'sw'].includes(dir)
-
-      ctx.save()
-      if (flipX) {
-        ctx.translate(16 * scale, 0)
-        ctx.scale(-1, 1)
-      }
-      drawFrame(ctx, FRAMES[frameName], scale)
-      ctx.restore()
-
+      drawFrame(ctx, FRAMES[frameName], flipX)
       rafRef.current = requestAnimationFrame(loop)
     }
 
@@ -220,29 +196,31 @@ export default function NekoWidget() {
       clearTimeout(sleepTimerRef.current)
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [getDir])
+  }, [flipX])
 
   if (!visible) return null
 
   return (
     <div
-      className="fixed z-[999] pointer-events-none"
+      className="fixed z-999"
       style={{
-        left: posRef.current.x - SIZE / 2,
-        top: posRef.current.y - SIZE / 2,
+        right: 24,
+        bottom: 24,
+        width: SIZE,
+        height: SIZE,
       }}
     >
       <canvas
         ref={canvasRef}
-        width={16 * scale}
-        height={16 * scale}
-        style={{ imageRendering: 'pixelated', width: SIZE, height: SIZE }}
+        width={SIZE}
+        height={SIZE}
+        style={{ imageRendering: 'pixelated', display: 'block' }}
       />
-      {/* dismiss button */}
       <button
-        className="pointer-events-auto absolute -top-3 -right-3 w-4 h-4 rounded-full bg-slate-700 text-slate-400 text-[8px] flex items-center justify-center hover:bg-slate-600 leading-none"
+        className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-slate-700/80 text-slate-400 flex items-center justify-center hover:bg-slate-600 leading-none"
+        style={{ fontSize: 9 }}
         onClick={() => setVisible(false)}
-        style={{ fontSize: 8 }}
+        title="关闭小猫"
       >
         ×
       </button>
