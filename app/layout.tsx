@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import CursorSpotlight from '@/components/CursorSpotlight'
+import NekoWidget from '@/components/NekoWidget'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh" className={inter.variable}>
       <body className="antialiased">
         <CursorSpotlight />
+        <NekoWidget />
         {children}
       </body>
     </html>
