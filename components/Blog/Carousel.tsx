@@ -1,7 +1,10 @@
 'use client'
 import { useRef, useState, useEffect } from 'react'
 import { motion, useInView } from 'framer-motion'
+import Link from 'next/link'
 import type { PostMeta } from '@/lib/posts'
+
+const MotionLink = motion(Link)
 
 export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -37,7 +40,7 @@ export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
       animate={inView ? 'visible' : 'hidden'}
     >
       {posts.map((post, i) => (
-        <motion.a
+        <MotionLink
           key={post.slug}
           href={`/blog/${post.slug}/`}
           className="glass rounded-2xl p-6 shrink-0 group hover:border-primary/50 transition-all block"
@@ -74,7 +77,7 @@ export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-500 font-mono">{post.date}</span>
           </div>
-        </motion.a>
+        </MotionLink>
       ))}
     </motion.div>
   )

@@ -3,6 +3,7 @@ import path from 'path'
 import matter from 'gray-matter'
 import readingTime from 'reading-time'
 import { MDXRemote } from 'next-mdx-remote/rsc'
+import Link from 'next/link'
 import ReadingProgress from './ReadingProgress'
 
 export function generateStaticParams() {
@@ -32,13 +33,13 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
           <div className="absolute top-0 right-1/4 w-[120px] md:w-[200px] h-[120px] md:h-[200px] bg-accent/10 rounded-full blur-[60px] md:blur-[80px]" />
         </div>
         <div className="relative max-w-3xl mx-auto px-4 sm:px-6">
-          <a
+          <Link
             href="/#blog"
             className="inline-flex items-center gap-1.5 text-accent font-mono text-sm hover:text-white transition-colors mb-6 group"
           >
             <span className="group-hover:-translate-x-1 transition-transform">←</span>
             工作亮点
-          </a>
+          </Link>
 
           {/* Tags */}
           <div className="flex flex-wrap gap-2 mb-4">

@@ -29,11 +29,12 @@ export default function Contact() {
         {/* WeChat QR Code */}
         <div className="flex flex-col items-center gap-6">
           <div className="glass rounded-2xl p-4 border border-white/10">
-            <div className="w-40 h-40 relative">
+            <div className="w-40 h-40 flex items-center justify-center">
               <Image
                 src="/wechat-qr.png"
                 alt="微信二维码"
-                fill
+                width={160}
+                height={160}
                 className="object-contain rounded-lg"
               />
             </div>

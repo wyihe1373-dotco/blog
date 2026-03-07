@@ -13,9 +13,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh" className={inter.variable}>
-      <body className="antialiased">
+      <body className="antialiased overflow-x-hidden">
         <CursorSpotlight />
-        {children}
+        <div className="overflow-x-hidden w-full">
+          {children}
+        </div>
       </body>
     </html>
   )
