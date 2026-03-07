@@ -79,16 +79,6 @@ export default function Hero() {
         </motion.div>
       </div>
 
-      {/* Scroll arrow */}
-      <motion.div
-        className="absolute bottom-8 left-1/2 -translate-x-1/2 text-slate-500"
-        animate={{ y: [0, 8, 0] }}
-        transition={{ repeat: Infinity, duration: 2 }}
-      >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M12 5v14M5 12l7 7 7-7" />
-        </svg>
-      </motion.div>
     </section>
   )
 }
