@@ -5,7 +5,7 @@ import { motion, useScroll, useTransform, useSpring, useInView } from 'framer-mo
 const projects = [
   {
     title: '长桥证券 · H5 混合开发',
-    period: '2024.09 – 2025.09',
+    period: '2024.09 – 至今',
     description:
       '负责长桥证券 App 内嵌 H5 核心业务研发，主导基金持仓完整交易链路开发：持仓日报可视化、基金买入下单、跨账户转仓全流程。封装高复用业务组件库，统一 JSBridge 通信与 Token 鉴权，多技术栈（React + TS / Vue2 / Vue3）并行交付。',
     tags: ['React', 'TypeScript', 'Vue3', 'Vue2', 'JSBridge', 'H5'],

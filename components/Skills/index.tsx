@@ -25,7 +25,7 @@ const experience = [
   {
     company: '长桥证券',
     role: '前端开发工程师',
-    period: '2024.09 – 2025.09',
+    period: '2024.09 – 至今',
     desc: '主导基金持仓交易链路 H5 研发，封装高复用业务组件库与 JSBridge 通信层，多技术栈并行交付。',
     tags: ['React', 'TypeScript', 'JSBridge', 'H5'],
   },
