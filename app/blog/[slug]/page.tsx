@@ -29,7 +29,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
           <div className="absolute top-0 left-1/4 w-[180px] md:w-[300px] h-[180px] md:h-[300px] bg-primary/15 rounded-full blur-[80px] md:blur-[100px]" />
           <div className="absolute top-0 right-1/4 w-[120px] md:w-[200px] h-[120px] md:h-[200px] bg-accent/10 rounded-full blur-[60px] md:blur-[80px]" />
         </div>
-        <div className="relative max-w-3xl mx-auto px-4 sm:px-6 pt-4">
+        <div className="relative max-w-3xl mx-auto px-6 sm:px-10 pt-4">
           {/* Tags */}
           <div className="flex flex-wrap gap-2 mb-4">
             {(data.tags ?? []).map((tag: string) => (
@@ -57,12 +57,12 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
       </div>
 
       {/* Divider */}
-      <div className="max-w-3xl mx-auto px-4 sm:px-6">
+      <div className="max-w-3xl mx-auto px-6 sm:px-10">
         <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
       </div>
 
       {/* Article body */}
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 pb-16">
+      <main className="max-w-3xl mx-auto px-6 sm:px-10 pb-16">
         <article className="post-body">
           <MDXRemote
             source={content}

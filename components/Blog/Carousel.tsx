@@ -27,15 +27,15 @@ export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
   return (
     <div ref={ref}>
       {/* Category tabs */}
-      <div className="flex gap-2 px-6 max-w-6xl mx-auto mb-8 flex-wrap">
+      <div className="flex gap-2 px-6 max-w-6xl mx-auto mb-8 flex-wrap justify-center sm:justify-start">
         {CATEGORIES.map(cat => (
           <button
             key={cat.label}
             onClick={() => setActive(cat.label)}
-            className={`relative px-4 py-1.5 rounded-full text-sm font-mono transition-colors duration-200 cursor-pointer ${
+            className={`relative px-4 py-1.5 rounded-full text-sm font-mono transition-colors duration-200 cursor-pointer border ${
               active === cat.label
-                ? 'text-white'
-                : 'text-slate-500 hover:text-slate-300'
+                ? 'text-white border-transparent'
+                : 'text-slate-500 border-white/10 hover:text-slate-300 hover:border-white/20'
             }`}
           >
             {active === cat.label && (
