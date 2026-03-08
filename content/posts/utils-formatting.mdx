@@ -1,0 +1,268 @@
+---
+title: "日期和金额格式化：常用库和原生方案对比"
+description: "dayjs 处理日期，Intl 格式化金额，再加几个 lodash 里真正高频用到的方法——这些工具几乎每个项目都会用"
+date: "2025-05-22"
+tags: ["JavaScript", "工具库", "dayjs", "lodash"]
+---
+
+## 日期：dayjs
+
+[dayjs](https://day.js.org/) 是 moment.js 的替代品，API 基本兼容，但体积只有 2kb。
+
+```bash
+npm install dayjs
+```
+
+### 基础格式化
+
+```javascript
+import dayjs from 'dayjs'
+
+dayjs().format('YYYY-MM-DD')           // '2025-05-22'
+dayjs().format('YYYY-MM-DD HH:mm:ss') // '2025-05-22 14:30:00'
+dayjs('2025-01-01').format('MM/DD')    // '01/01'
+```
+
+### 计算和比较
+
+```javascript
+// 加减
+dayjs().add(7, 'day').format('YYYY-MM-DD')    // 7天后
+dayjs().subtract(1, 'month').format('YYYY-MM') // 上个月
+
+// 差值（天数）
+const diff = dayjs('2025-12-31').diff(dayjs(), 'day')
+// 离年底还有多少天
+
+// 比较
+dayjs('2025-05-01').isBefore(dayjs('2025-06-01')) // true
+dayjs('2025-05-01').isAfter(dayjs('2024-01-01'))  // true
+```
+
+### 相对时间（"3天前"）
+
+需要引入插件：
+
+```javascript
+import dayjs from 'dayjs'
+import relativeTime from 'dayjs/plugin/relativeTime'
+import 'dayjs/locale/zh-cn'
+
+dayjs.extend(relativeTime)
+dayjs.locale('zh-cn')
+
+dayjs('2025-05-20').fromNow() // '2天前'
+dayjs().to(dayjs('2025-12-31')) // '7个月后'
+```
+
+### 时间戳互转
+
+```javascript
+// 时间戳 → 格式化
+dayjs(1716345600000).format('YYYY-MM-DD') // '2024-05-22'
+
+// 格式化 → 时间戳
+dayjs('2025-01-01').valueOf() // 毫秒时间戳
+dayjs('2025-01-01').unix()    // 秒时间戳
+```
+
+---
+
+## 金额格式化：Intl.NumberFormat
+
+原生 `Intl` API 不需要安装，格式化金额足够用。
+
+```javascript
+// 人民币
+const cny = new Intl.NumberFormat('zh-CN', {
+  style: 'currency',
+  currency: 'CNY',
+}).format(12345.6)
+// '¥12,345.60'
+
+// 美元
+const usd = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+}).format(12345.6)
+// '$12,345.60'
+
+// 只加千分位，不加货币符号
+const num = new Intl.NumberFormat('zh-CN').format(1234567.89)
+// '1,234,567.89'
+
+// 指定小数位
+const fixed = new Intl.NumberFormat('zh-CN', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+}).format(100)
+// '100.00'
+```
+
+封装成一个工具函数常驻项目里：
+
+```javascript
+function formatMoney(value, currency = 'CNY') {
+  if (value === null || value === undefined) return '--'
+  return new Intl.NumberFormat('zh-CN', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+formatMoney(12345.6)    // '¥12,345.60'
+formatMoney(null)       // '--'
+formatMoney(100, 'USD') // '$100.00'
+```
+
+### 万/亿单位换算
+
+金融类项目常见需求：
+
+```javascript
+function formatCNY(value) {
+  if (value >= 1e8) return (value / 1e8).toFixed(2) + '亿'
+  if (value >= 1e4) return (value / 1e4).toFixed(2) + '万'
+  return value.toFixed(2)
+}
+
+formatCNY(12345678) // '1234.57万'
+formatCNY(123456789) // '1.23亿'
+formatCNY(999)      // '999.00'
+```
+
+---
+
+## 数字格式化：toFixed 的坑
+
+```javascript
+// ❌ toFixed 有精度问题
+(1.005).toFixed(2) // '1.00'  而不是 '1.01'
+(1.255).toFixed(2) // '1.25'  而不是 '1.26'
+```
+
+精度要求高的场景（比如利率、汇率）用 `Number(Math.round(num + 'e+2') + 'e-2')` 或者直接用 [decimal.js](https://github.com/MikeMcl/decimal.js/)。
+
+---
+
+## lodash：几个真正高频的方法
+
+```bash
+npm install lodash-es  # ES Module 版，支持 tree-shaking
+```
+
+### cloneDeep — 深拷贝
+
+```javascript
+import { cloneDeep } from 'lodash-es'
+
+const original = { a: { b: { c: 1 } } }
+const copy = cloneDeep(original)
+copy.a.b.c = 99
+original.a.b.c // 还是 1，没被改
+```
+
+比 `JSON.parse(JSON.stringify(...))` 安全，能处理 `Date`、`Map`、`Set`、循环引用。
+
+### debounce / throttle — 防抖节流
+
+```javascript
+import { debounce, throttle } from 'lodash-es'
+
+// 搜索框：停止输入 300ms 后才发请求
+const search = debounce((val) => fetchResults(val), 300)
+
+// 滚动事件：每 200ms 最多执行一次
+window.addEventListener('scroll', throttle(handleScroll, 200))
+```
+
+### groupBy — 按字段分组
+
+```javascript
+import { groupBy } from 'lodash-es'
+
+const transactions = [
+  { date: '2025-05-01', type: 'buy', amount: 1000 },
+  { date: '2025-05-01', type: 'sell', amount: 500 },
+  { date: '2025-05-02', type: 'buy', amount: 800 },
+]
+
+groupBy(transactions, 'date')
+// {
+//   '2025-05-01': [{ type: 'buy', ... }, { type: 'sell', ... }],
+//   '2025-05-02': [{ type: 'buy', ... }]
+// }
+```
+
+### omit / pick — 过滤对象字段
+
+```javascript
+import { omit, pick } from 'lodash-es'
+
+const user = { id: 1, name: '张三', password: 'abc123', token: 'xxx' }
+
+pick(user, ['id', 'name'])           // { id: 1, name: '张三' }
+omit(user, ['password', 'token'])    // { id: 1, name: '张三' }
+```
+
+提交表单时常用 `omit` 去掉不需要提交的字段。
+
+### isEmpty — 非空判断
+
+```javascript
+import { isEmpty } from 'lodash-es'
+
+// 数组
+isEmpty([])        // true
+isEmpty([1, 2, 3]) // false
+
+// 对象
+isEmpty({})              // true
+isEmpty({ name: '张三' }) // false
+
+// 字符串
+isEmpty('')    // true
+isEmpty('abc') // false
+
+// null / undefined
+isEmpty(null)      // true
+isEmpty(undefined) // true
+```
+
+注意：`isEmpty(0)`、`isEmpty(true)` 这类非集合类型都返回 `true`，它是专门给数组、对象、字符串用的，数字直接 `=== 0` 判断就行。
+
+不想引 lodash 的话，自己写也很简单：
+
+```javascript
+const isEmpty = (val) => {
+  if (val === null || val === undefined) return true
+  if (typeof val === 'string') return val.trim() === ''
+  if (Array.isArray(val)) return val.length === 0
+  if (typeof val === 'object') return Object.keys(val).length === 0
+  return false
+}
+```
+
+项目里经常用来判断接口返回的列表是否为空、表单对象有没有填数据。
+
+---
+
+### get — 安全取深层属性
+
+```javascript
+import { get } from 'lodash-es'
+
+const data = { user: { profile: { avatar: 'url' } } }
+
+// ❌ 可能报错
+data.user.address.city
+
+// ✅ 取不到返回 undefined 或默认值
+get(data, 'user.profile.avatar')        // 'url'
+get(data, 'user.address.city')          // undefined
+get(data, 'user.address.city', '未知')  // '未知'
+```
+
+现在可选链 `?.` 基本能替代这个，但 lodash 的 `get` 在路径是动态字符串时还是更方便。

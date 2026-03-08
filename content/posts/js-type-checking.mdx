@@ -1,0 +1,116 @@
+---
+title: "JS 类型判断，我踩过的那些坑"
+description: "typeof、instanceof、Object.prototype.toString——每种方式都有自己的盲区，整理一遍省得以后再查"
+date: "2025-07-20"
+tags: ["JavaScript", "基础"]
+---
+
+## 先说结论
+
+JS 判断类型这件事看起来简单，但坑真的不少。我见过同事（也包括以前的我）在这上面吃亏的情况：
+
+- `typeof null === 'object'` —— 没错，这是 JS 历史遗留 bug
+- `[] instanceof Array` 在 iframe 里会返回 `false`
+- `NaN` 用 `typeof` 判出来是 `'number'`
+
+下面按场景整理，不是为了覆盖所有情况，是为了记住最常用的和最容易出错的。
+
+---
+
+## typeof：简单但有局限
+
+```javascript
+typeof 'hello'      // 'string'
+typeof 42           // 'number'
+typeof true         // 'boolean'
+typeof undefined    // 'undefined'
+typeof Symbol()     // 'symbol'
+typeof function(){} // 'function'
+
+// 坑：
+typeof null         // 'object' ← 历史 bug，别被骗了
+typeof []           // 'object' ← 数组也是 object
+typeof {}           // 'object'
+typeof NaN          // 'number' ← NaN 居然是 number 类型
+```
+
+`typeof` 适合判断基本类型（string / number / boolean / undefined / symbol），判引用类型基本没用。
+
+---
+
+## instanceof：判断实例关系，但跨 frame 会失效
+
+```javascript
+[] instanceof Array     // true
+{} instanceof Object    // true
+new Date() instanceof Date // true
+
+// 跨 frame 的坑：
+// 在 iframe 里创建的数组，instanceof Array 返回 false
+// 因为两个 frame 的 Array 构造函数不是同一个引用
+```
+
+`instanceof` 本质是顺着原型链找，所以自定义类用这个判断继承关系很合适，但判断内置类型（Array / Date 等）不够可靠。
+
+---
+
+## Object.prototype.toString：最靠谱的通用方案
+
+```javascript
+const type = (val) => Object.prototype.toString.call(val).slice(8, -1).toLowerCase()
+
+type(null)        // 'null'
+type(undefined)   // 'undefined'
+type([])          // 'array'
+type({})          // 'object'
+type(new Date())  // 'date'
+type(/regex/)     // 'regexp'
+type(NaN)         // 'number'   ← 注意，NaN 还是 number
+type(function(){}) // 'function'
+```
+
+这是我用得最多的方式。唯一要注意的是 NaN——它的类型还是 `'number'`，得用 `Number.isNaN()` 单独判断。
+
+---
+
+## 几个专用方法，别忘了
+
+```javascript
+// 判断数组：官方推荐
+Array.isArray([])  // true
+Array.isArray({})  // false
+
+// 判断 NaN：注意不要用 isNaN()，那个会先 toNumber
+Number.isNaN(NaN)   // true
+Number.isNaN('abc') // false ← isNaN('abc') 是 true，坑在这里
+
+// 判断整数
+Number.isInteger(1)    // true
+Number.isInteger(1.5)  // false
+
+// 判断有限数
+Number.isFinite(1)        // true
+Number.isFinite(Infinity) // false
+```
+
+---
+
+## 我的实际用法
+
+实际项目里我一般这样：
+
+```typescript
+// 一个简单的类型工具函数
+export const is = {
+  string: (v: unknown): v is string => typeof v === 'string',
+  number: (v: unknown): v is number => typeof v === 'number' && !Number.isNaN(v),
+  array: Array.isArray,
+  object: (v: unknown): v is Record<string, unknown> =>
+    Object.prototype.toString.call(v) === '[object Object]',
+  null: (v: unknown): v is null => v === null,
+  undefined: (v: unknown): v is undefined => v === undefined,
+  nullOrUndefined: (v: unknown): v is null | undefined => v == null,
+}
+```
+
+用的时候就 `is.array(val)`、`is.nullOrUndefined(val)` 这样，比每次手写 `toString.call` 省事，类型收窄也到位。

@@ -1,10 +1,8 @@
 import fs from 'fs'
 import path from 'path'
 import matter from 'gray-matter'
-import readingTime from 'reading-time'
 import { MDXRemote } from 'next-mdx-remote/rsc'
-import Link from 'next/link'
-import ReadingProgress from './ReadingProgress'
+import PostNav from './PostNav'
 
 export function generateStaticParams() {
   const files = fs.readdirSync(path.join(process.cwd(), 'content/posts'))
@@ -20,27 +18,18 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
     'utf-8'
   )
   const { data, content } = matter(file)
-  const rt = readingTime(content).text
 
   return (
     <>
-      <ReadingProgress />
+      <PostNav title={data.title} />
 
       {/* Hero header */}
-      <div className="relative overflow-hidden bg-gradient-to-b from-primary/10 via-[#050510] to-[#050510] pt-4 md:pt-16 pb-8">
+      <div className="relative overflow-hidden bg-gradient-to-b from-primary/10 via-[#050510] to-[#050510] pt-16 pb-8">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-0 left-1/4 w-[180px] md:w-[300px] h-[180px] md:h-[300px] bg-primary/15 rounded-full blur-[80px] md:blur-[100px]" />
           <div className="absolute top-0 right-1/4 w-[120px] md:w-[200px] h-[120px] md:h-[200px] bg-accent/10 rounded-full blur-[60px] md:blur-[80px]" />
         </div>
-        <div className="relative max-w-3xl mx-auto px-4 sm:px-6">
-          <Link
-            href="/#blog"
-            className="inline-flex items-center gap-1.5 text-accent font-mono text-sm hover:text-white transition-colors mb-6 group"
-          >
-            <span className="group-hover:-translate-x-1 transition-transform">←</span>
-            工作亮点
-          </Link>
-
+        <div className="relative max-w-3xl mx-auto px-4 sm:px-6 pt-4">
           {/* Tags */}
           <div className="flex flex-wrap gap-2 mb-4">
             {(data.tags ?? []).map((tag: string) => (
@@ -63,7 +52,6 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
           {/* Meta row */}
           <div className="flex items-center gap-4 text-xs font-mono text-slate-500">
             <span>{data.date}</span>
-            <span>{rt}</span>
           </div>
         </div>
       </div>
@@ -76,7 +64,16 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
       {/* Article body */}
       <main className="max-w-3xl mx-auto px-4 sm:px-6 pb-16">
         <article className="post-body">
-          <MDXRemote source={content} />
+          <MDXRemote
+            source={content}
+            components={{
+              pre: ({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) => (
+                <div className="code-block">
+                  <pre {...props}>{children}</pre>
+                </div>
+              ),
+            }}
+          />
         </article>
       </main>
     </>

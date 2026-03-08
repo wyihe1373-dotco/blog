@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 const links = [
-  { label: 'Stats', href: '#skills' },
-  { label: 'Projects', href: '#projects' },
-  { label: 'Blog', href: '#blog' },
-  { label: 'Contact', href: '#contact' },
+  { label: '关于我', href: '#skills' },
+  { label: '项目', href: '#projects' },
+  { label: '工作亮点', href: '#blog' },
+  { label: '联系我', href: '#contact' },
 ]
 
 export default function Navigation() {
@@ -57,9 +57,10 @@ export default function Navigation() {
       />
 
       <motion.nav
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-          scrolled || menuOpen ? 'glass border-b border-white/10' : ''
+        className={`fixed top-0 left-0 right-0 z-50 transition-[background-color] duration-300 ${
+          scrolled || menuOpen ? 'bg-background/95' : ''
         }`}
+        style={{ boxShadow: (scrolled || menuOpen) ? '0 1px 0 rgba(255,255,255,0.07)' : 'none' }}
         initial={{ y: -100 }}
         animate={{ y: 0 }}
         transition={{ duration: 0.6 }}
@@ -87,7 +88,7 @@ export default function Navigation() {
                     <motion.div
                       layoutId="nav-underline"
                       className="absolute -bottom-1 left-0 right-0 h-[2px] bg-gradient-to-r from-primary to-accent rounded-full"
-                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                      transition={{ type: 'spring', stiffness: 375, damping: 30 }}
                     />
                   )}
                 </a>

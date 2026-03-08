@@ -1,0 +1,253 @@
+---
+title: "React 学习笔记：用对比法快速建立直觉"
+description: "从 Vue 转过来学 React，发现最快的方式是把两边的概念对上——同一个需求，两边各怎么写，差异自然就清楚了"
+date: "2025-08-05"
+tags: ["React", "学习笔记"]
+---
+
+## 为什么用对比法
+
+我是做 Vue 比较多的，后来项目需要开始用 React。网上的 React 教程大多是从零开始讲，但我已经有 Vue 的基础了，这时候最高效的学法不是把所有基础再过一遍，而是**找到两边的对应关系**。
+
+这篇笔记就是这个目的：同一个需求，Vue 怎么写，React 怎么写，差在哪。
+
+---
+
+## 组件定义
+
+**Vue（Options API）：**
+```vue
+<script>
+export default {
+  data() { return { count: 0 } },
+  methods: {
+    add() { this.count++ }
+  }
+}
+</script>
+<template>
+  <button @click="add">{{ count }}</button>
+</template>
+```
+
+**React：**
+```jsx
+function Counter() {
+  const [count, setCount] = useState(0)
+  return <button onClick={() => setCount(c => c + 1)}>{count}</button>
+}
+```
+
+React 就是个函数，状态用 `useState`，没有 `this`，也没有模板语法，JSX 就是 JS。
+
+---
+
+## 响应式状态
+
+**Vue：** `data` 返回的对象自动响应式，直接 `this.xxx = yyy` 触发更新。
+
+**React：** 必须用 `setState` 系列，**直接改 state 不会触发重渲染**。这个是从 Vue 转过来最容易犯的错。
+
+```javascript
+// ❌ 这样改不会触发重渲染
+state.count++
+
+// ✅ 必须这样
+setCount(count + 1)
+
+// ❌ 直接改数组/对象也不行
+list.push(item)
+
+// ✅ 要返回新引用
+setList([...list, item])
+```
+
+---
+
+## 生命周期对比
+
+| Vue (Options API) | React Hook | 说明 |
+|---|---|---|
+| `created` | `useState` 初始化 | 组件初始化 |
+| `mounted` | `useEffect(() => {}, [])` | 挂载后执行一次 |
+| `updated` | `useEffect(() => {})` | 每次更新后 |
+| `beforeUnmount` | `useEffect` 返回的清理函数 | 卸载前 |
+| `watch` | `useEffect(() => {}, [dep])` | 监听特定变量 |
+
+`useEffect` 一个顶 Vue 里好几个生命周期，熟悉之后会觉得这个设计很直观。
+
+---
+
+## 父子通信
+
+**Vue：** `props` 传入，`$emit` 向上，`provide/inject` 跨层。
+
+**React：** 同样用 `props`，向上传回调函数（不是事件），跨层用 `Context`。
+
+```jsx
+// 父组件传回调
+<Child onDone={(result) => setResult(result)} />
+
+// 子组件调用
+function Child({ onDone }) {
+  return <button onClick={() => onDone('ok')}>完成</button>
+}
+```
+
+React 里没有"事件"这个概念，就是函数传来传去。
+
+---
+
+## Computed vs useMemo
+
+**Vue：**
+```javascript
+computed: {
+  fullName() { return this.first + ' ' + this.last }
+}
+```
+
+**React：**
+```javascript
+const fullName = useMemo(() => first + ' ' + last, [first, last])
+```
+
+大多数情况直接算就行，不需要 `useMemo`。只有计算量大、或者需要保持引用稳定的时候才用。
+
+---
+
+## 几个常用 Hook 补充
+
+### useRef — 拿 DOM 或存不触发渲染的值
+
+```jsx
+const inputRef = useRef(null)
+
+// 操作 DOM
+<input ref={inputRef} />
+<button onClick={() => inputRef.current.focus()}>聚焦</button>
+```
+
+`useRef` 还有另一个用途——存一个"不想触发重渲染"的值，比如定时器 ID、上一次的值：
+
+```jsx
+const timerRef = useRef(null)
+
+useEffect(() => {
+  timerRef.current = setInterval(() => tick(), 1000)
+  return () => clearInterval(timerRef.current)
+}, [])
+```
+
+和 `useState` 的区别：改 `ref.current` 不会触发重渲染，适合存"内部状态"。
+
+---
+
+### useContext — 跨层传值，对应 Vue 的 provide/inject
+
+先创建 Context，再用 Provider 提供值，子孙组件直接消费：
+
+```jsx
+// 1. 创建
+const ThemeContext = createContext('light')
+
+// 2. 提供
+function App() {
+  return (
+    <ThemeContext.Provider value="dark">
+      <Page />
+    </ThemeContext.Provider>
+  )
+}
+
+// 3. 消费（任意层级的子组件）
+function Button() {
+  const theme = useContext(ThemeContext)
+  return <button className={theme}>按钮</button>
+}
+```
+
+适合主题、语言、用户信息这类全局数据。不要滥用——频繁变化的状态用 `useContext` 会导致所有消费组件一起重渲染。
+
+---
+
+### useReducer — 复杂状态的 useState 替代
+
+当一个组件里 state 很多、更新逻辑复杂时，`useReducer` 比一堆 `useState` 更清晰：
+
+```jsx
+function reducer(state, action) {
+  switch (action.type) {
+    case 'increment': return { count: state.count + 1 }
+    case 'reset':     return { count: 0 }
+    default:          return state
+  }
+}
+
+function Counter() {
+  const [state, dispatch] = useReducer(reducer, { count: 0 })
+  return (
+    <>
+      <span>{state.count}</span>
+      <button onClick={() => dispatch({ type: 'increment' })}>+1</button>
+      <button onClick={() => dispatch({ type: 'reset' })}>重置</button>
+    </>
+  )
+}
+```
+
+思路有点像 Vuex/Pinia 的 mutation，把"怎么改"和"何时改"分离开，逻辑更容易测试。
+
+---
+
+### useCallback — 稳定函数引用
+
+```jsx
+// ❌ 每次渲染都生成新函数，子组件 memo 失效
+const handleClick = () => fetchData(id)
+
+// ✅ id 不变时函数引用不变
+const handleClick = useCallback(() => fetchData(id), [id])
+```
+
+只在**传给子组件的回调**或**作为 useEffect 依赖的函数**时才需要，别乱加，加多了反而有额外开销。
+
+---
+
+### 自定义 Hook — 复用逻辑的正确姿势
+
+React 里复用逻辑不用 mixin，用自定义 Hook。就是一个以 `use` 开头的函数，里面可以调用其他 Hook：
+
+```jsx
+// 封装 fetch 逻辑
+function useFetch(url) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    fetch(url)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false) })
+  }, [url])
+
+  return { data, loading }
+}
+
+// 用的时候
+function UserCard({ id }) {
+  const { data, loading } = useFetch(`/api/user/${id}`)
+  if (loading) return <Spinner />
+  return <div>{data.name}</div>
+}
+```
+
+这是 React 里最重要的模式之一，把 UI 和数据逻辑彻底分开，`useFetch` 可以在任意组件里复用。
+
+---
+
+## 一些心得
+
+从 Vue 转过来学 React，最难受的不是记 API，是**心智模型的切换**。Vue 那套我已经很顺手了——"改数据，视图自动跟"；React 完全不一样，每次 render 都是全新的一次描述，得接受"这次 state 是这样，所以界面应该长这样"的思路。
+
+`useEffect` 的依赖数组卡了我一段时间。后来发现死记规则没用，只要记住一件事就够了：**effect 里用到的、会变化的东西，都放进依赖数组**。开着 eslint-plugin-react-hooks 的 `exhaustive-deps` 规则，它会直接告诉你漏了什么。

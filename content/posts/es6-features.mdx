@@ -1,0 +1,321 @@
+---
+title: "ES6+ 常用语法速览"
+description: "let/const、解构、箭头函数、模板字符串、扩展运算符……这些几乎每行代码都会用到，整理一遍备查"
+date: "2025-03-18"
+tags: ["JavaScript", "ES6", "基础"]
+---
+
+## let / const vs var
+
+```javascript
+// var 有变量提升，函数作用域，容易出问题
+console.log(a) // undefined（不报错）
+var a = 1
+
+// let/const 块级作用域，没有提升，推荐用
+console.log(b) // ❌ ReferenceError
+let b = 1
+```
+
+**原则：** 默认用 `const`，需要重新赋值再用 `let`，不用 `var`。
+
+`const` 只是不能重新赋值，对象/数组的内容还是可以改的：
+
+```javascript
+const obj = { count: 0 }
+obj.count++ // ✅ 可以
+obj = {}    // ❌ 报错
+```
+
+---
+
+## 解构赋值
+
+### 数组解构
+
+```javascript
+const [a, b, c] = [1, 2, 3]
+// a=1, b=2, c=3
+
+// 跳过某项
+const [, second] = [1, 2, 3]
+// second=2
+
+// 默认值
+const [x = 0, y = 0] = [10]
+// x=10, y=0
+
+// 交换变量
+let m = 1, n = 2
+;[m, n] = [n, m]
+// m=2, n=1
+```
+
+### 对象解构
+
+```javascript
+const user = { name: '张三', age: 25, role: 'admin' }
+
+const { name, age } = user
+// name='张三', age=25
+
+// 重命名
+const { name: userName } = user
+// userName='张三'
+
+// 默认值
+const { avatar = '/default.png' } = user
+// avatar='/default.png'
+
+// 函数参数解构
+function greet({ name, age = 0 }) {
+  return `${name}, ${age}岁`
+}
+greet(user) // '张三, 25岁'
+```
+
+---
+
+## 模板字符串
+
+```javascript
+const name = '张三'
+const score = 98.5
+
+// ❌ 旧写法拼接麻烦
+'你好，' + name + '，你的得分是 ' + score + ' 分'
+
+// ✅ 模板字符串
+`你好，${name}，你的得分是 ${score} 分`
+
+// 可以放表达式
+`总分：${score > 90 ? '优秀' : '良好'}`
+
+// 多行字符串
+const html = `
+  <div>
+    <p>${name}</p>
+  </div>
+`
+```
+
+---
+
+## 箭头函数
+
+```javascript
+// 普通函数
+function add(a, b) { return a + b }
+
+// 箭头函数
+const add = (a, b) => a + b
+
+// 只有一个参数可以省括号
+const double = n => n * 2
+
+// 函数体多行加花括号，要显式 return
+const process = (n) => {
+  const result = n * 2
+  return result + 1
+}
+
+// 返回对象要加括号（不然花括号会被当函数体）
+const toObj = (x) => ({ value: x })
+```
+
+箭头函数没有自己的 `this`，继承外层作用域的 `this`，适合回调函数：
+
+```javascript
+// ❌ 普通函数 this 丢失
+class Timer {
+  start() {
+    setTimeout(function() {
+      this.tick() // this 不是 Timer 实例
+    }, 1000)
+  }
+}
+
+// ✅ 箭头函数继承 this
+class Timer {
+  start() {
+    setTimeout(() => {
+      this.tick() // this 是 Timer 实例
+    }, 1000)
+  }
+}
+```
+
+---
+
+## 扩展运算符 / 剩余参数
+
+```javascript
+// 展开数组
+const a = [1, 2, 3]
+const b = [0, ...a, 4]
+// [0, 1, 2, 3, 4]
+
+// 合并对象（后面的会覆盖前面的同名属性）
+const defaults = { theme: 'dark', lang: 'zh' }
+const custom = { lang: 'en', size: 14 }
+const config = { ...defaults, ...custom }
+// { theme: 'dark', lang: 'en', size: 14 }
+
+// 浅拷贝
+const copy = { ...original }
+const arrCopy = [...arr]
+
+// 剩余参数（放最后）
+function sum(first, ...rest) {
+  return rest.reduce((acc, n) => acc + n, first)
+}
+sum(1, 2, 3, 4) // 10
+```
+
+---
+
+## 默认参数
+
+```javascript
+// ❌ 旧写法
+function request(url, method) {
+  method = method || 'GET'
+}
+
+// ✅ 默认参数
+function request(url, method = 'GET', timeout = 5000) {
+  // ...
+}
+
+request('/api/user')               // GET, 5000
+request('/api/user', 'POST')       // POST, 5000
+request('/api/user', 'POST', 3000) // POST, 3000
+```
+
+传 `undefined` 会用默认值，传 `null` 不会：
+
+```javascript
+request('/api', undefined, 3000) // method='GET'（触发默认值）
+request('/api', null, 3000)      // method=null（不触发）
+```
+
+---
+
+## 可选链 ?. 和空值合并 ??
+
+ES2020，但现在用得非常普遍，不能不提。
+
+```javascript
+const user = { profile: { avatar: 'url' } }
+
+// ❌ 层层判断很烦
+user && user.profile && user.profile.avatar
+
+// ✅ 可选链
+user?.profile?.avatar // 'url'
+user?.address?.city   // undefined（不报错）
+
+// 方法调用
+user?.getPermissions?.()
+
+// 数组
+arr?.[0]
+```
+
+```javascript
+// ?? 只在 null/undefined 时用默认值（和 || 不同，|| 在 0/'' 时也会用默认值）
+const count = data.count ?? 0    // data.count 是 0 时保留 0
+const count2 = data.count || 0   // data.count 是 0 时变成 0（❌ 可能不符合预期）
+
+const name = user.name ?? '匿名'
+```
+
+---
+
+## Promise
+
+解决回调地狱，链式调用异步操作。
+
+```javascript
+// 创建
+const p = new Promise((resolve, reject) => {
+  setTimeout(() => resolve('done'), 1000)
+})
+
+// 使用
+p.then(result => console.log(result))
+ .catch(err => console.error(err))
+ .finally(() => console.log('无论如何都执行'))
+
+// async/await：更直观的写法
+async function fetchUser(id) {
+  try {
+    const res = await fetch(`/api/user/${id}`)
+    const data = await res.json()
+    return data
+  } catch (err) {
+    console.error(err)
+  }
+}
+```
+
+### 常用的 Promise 静态方法
+
+```javascript
+// 全部成功才继续
+const [user, orders] = await Promise.all([
+  fetchUser(id),
+  fetchOrders(id),
+])
+
+// 哪个先完成用哪个
+const result = await Promise.race([
+  fetchWithTimeout(),
+  timeout(5000),
+])
+
+// 全部完成，不管成功失败
+const results = await Promise.allSettled([p1, p2, p3])
+results.forEach(r => {
+  if (r.status === 'fulfilled') console.log(r.value)
+  else console.log(r.reason)
+})
+```
+
+---
+
+## Map / Set
+
+### Set — 不重复的集合
+
+```javascript
+// 数组去重
+const arr = [1, 2, 2, 3, 3]
+const unique = [...new Set(arr)]
+// [1, 2, 3]
+
+const set = new Set([1, 2, 3])
+set.add(4)
+set.has(2) // true
+set.delete(2)
+set.size   // 3
+```
+
+### Map — 键可以是任意类型的对象
+
+```javascript
+const map = new Map()
+map.set('name', '张三')
+map.set(1, 'one')
+map.set({ key: true }, 'obj-key')
+
+map.get('name') // '张三'
+map.has('name') // true
+map.size        // 3
+
+// 遍历
+map.forEach((value, key) => console.log(key, value))
+for (const [key, value] of map) { ... }
+```
+
+比普通对象好的地方：键可以是对象，有 `size`，遍历顺序固定（按插入顺序）。

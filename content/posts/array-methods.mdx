@@ -1,0 +1,194 @@
+---
+title: "数组方法备忘：常用的数组操作"
+description: "map/filter/reduce 到 flat/findIndex，把平时写业务会用到的数组方法整理一遍，顺手记了几个容易踩坑的地方"
+date: "2025-04-10"
+tags: ["JavaScript", "数组", "基础"]
+---
+
+## 转换：map
+
+返回一个新数组，每项都经过处理。原数组不变。
+
+```javascript
+const prices = [100, 200, 300]
+
+// 加税
+const withTax = prices.map(p => p * 1.1)
+// [110, 220, 330]
+
+// 对象数组取字段
+const users = [{ name: '张三', age: 25 }, { name: '李四', age: 30 }]
+const names = users.map(u => u.name)
+// ['张三', '李四']
+```
+
+---
+
+## 过滤：filter
+
+返回满足条件的项，组成新数组。
+
+```javascript
+const list = [1, 2, 3, 4, 5]
+const evens = list.filter(n => n % 2 === 0)
+// [2, 4]
+
+// 过滤掉空值
+const values = ['a', '', null, 'b', undefined, 'c']
+const clean = values.filter(Boolean)
+// ['a', 'b', 'c']
+```
+
+`filter(Boolean)` 这个写法很常用，能一次去掉所有 falsy 值（`null`、`undefined`、`''`、`0`、`false`）。
+
+---
+
+## 归并：reduce
+
+把数组"折叠"成一个值，功能最强，也最容易被滥用。
+
+```javascript
+// 求和
+const nums = [1, 2, 3, 4]
+const sum = nums.reduce((acc, cur) => acc + cur, 0)
+// 10
+
+// 按字段分组
+const orders = [
+  { type: 'buy', amount: 100 },
+  { type: 'sell', amount: 200 },
+  { type: 'buy', amount: 150 },
+]
+const grouped = orders.reduce((acc, order) => {
+  acc[order.type] = acc[order.type] || []
+  acc[order.type].push(order)
+  return acc
+}, {})
+// { buy: [...], sell: [...] }
+```
+
+初始值（第二个参数）不要省，省了遇到空数组会报错。
+
+---
+
+## 查找：find / findIndex
+
+`find` 返回第一个匹配的**元素**，`findIndex` 返回**下标**，都没找到分别返回 `undefined` 和 `-1`。
+
+```javascript
+const users = [
+  { id: 1, name: '张三' },
+  { id: 2, name: '李四' },
+  { id: 3, name: '王五' },
+]
+
+const user = users.find(u => u.id === 2)
+// { id: 2, name: '李四' }
+
+const idx = users.findIndex(u => u.id === 2)
+// 1
+
+// 没找到
+users.find(u => u.id === 99)     // undefined
+users.findIndex(u => u.id === 99) // -1
+```
+
+需要拿对象用 `find`，需要改数组（比如替换某项）用 `findIndex`。
+
+---
+
+## 判断：some / every
+
+```javascript
+const scores = [80, 92, 55, 70]
+
+// 有没有不及格的
+scores.some(s => s < 60)   // true
+
+// 是不是全部及格
+scores.every(s => s >= 60) // false
+```
+
+遇到符合条件的 `some` 立刻返回 `true`，遇到不符合的 `every` 立刻返回 `false`，都是短路的，效率比 `filter` 再 `length` 判断要好。
+
+---
+
+## 拍平：flat / flatMap
+
+`flat` 展开嵌套数组，参数是层数，`Infinity` 展开到底。
+
+```javascript
+const nested = [1, [2, 3], [4, [5, 6]]]
+nested.flat()        // [1, 2, 3, 4, [5, 6]]
+nested.flat(2)       // [1, 2, 3, 4, 5, 6]
+nested.flat(Infinity) // [1, 2, 3, 4, 5, 6]
+```
+
+`flatMap` 相当于 `map` 之后 `flat(1)`，适合把一项映射成多项：
+
+```javascript
+const sentences = ['hello world', 'foo bar']
+const words = sentences.flatMap(s => s.split(' '))
+// ['hello', 'world', 'foo', 'bar']
+```
+
+---
+
+## 排序：sort
+
+**注意：sort 是原地排序，会改变原数组。**
+
+```javascript
+const nums = [10, 1, 21, 3]
+
+// ❌ 默认按字符串排，结果不对
+nums.sort()
+// [1, 10, 21, 3] — 错误
+
+// ✅ 传比较函数
+nums.sort((a, b) => a - b)   // 升序 [1, 3, 10, 21]
+nums.sort((a, b) => b - a)   // 降序 [21, 10, 3, 1]
+```
+
+不想改原数组，先 spread 一份：
+
+```javascript
+const sorted = [...nums].sort((a, b) => a - b)
+```
+
+---
+
+## includes / indexOf
+
+```javascript
+const arr = [1, 2, 3, NaN]
+
+arr.includes(2)   // true
+arr.includes(NaN) // true  ✅ includes 能识别 NaN
+
+arr.indexOf(2)    // 1
+arr.indexOf(NaN)  // -1   ❌ indexOf 用 === 比较，找不到 NaN
+```
+
+判断"有没有"用 `includes`，需要下标用 `indexOf`。
+
+---
+
+## Array.from
+
+把类数组（NodeList、Set、arguments 等）转成真数组，或者用来快速生成序列：
+
+```javascript
+// NodeList 转数组
+const divs = Array.from(document.querySelectorAll('div'))
+
+// Set 去重
+const unique = Array.from(new Set([1, 2, 2, 3]))
+// [1, 2, 3]
+
+// 生成 1-10 的数组
+const range = Array.from({ length: 10 }, (_, i) => i + 1)
+// [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+```
+
+最后这个 `Array.from({ length: n }, (_, i) => ...)` 的写法在生成骨架屏占位、序号列表时很好用。

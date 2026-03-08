@@ -1,0 +1,279 @@
+---
+title: "命令式组件封装：Toast、Loading、Dialog 全局调用"
+description: "不想每个页面都维护一个 visible 状态？命令式调用让你像用 alert() 一样用弹窗和提示"
+date: "2025-07-12"
+tags: ["组件封装", "Vue3", "React", "全局调用"]
+---
+
+## 什么是命令式调用
+
+正常用组件都是声明式的：在模板/JSX 里写 `<Toast visible={show} />`，自己管理 `visible` 状态。
+
+命令式是另一种方式：直接调用一个函数就弹出来，不需要在模板里写任何东西：
+
+```javascript
+// 声明式 — 要在模板里写组件、管理状态
+showToast.value = true
+
+// 命令式 — 直接调用
+toast.success('操作成功')
+```
+
+Toast、全局 Loading、确认弹窗这几个场景特别适合命令式，因为它们出现频率高、跟业务逻辑强耦合，每个页面都维护一套状态很烦。
+
+---
+
+## Vue3：封装命令式 Toast
+
+核心思路：动态创建一个 Vue 应用实例，挂到 `document.body`，用完销毁。
+
+```typescript
+// toast.ts
+import { createApp, h, ref } from 'vue'
+
+function createToast(message: string, type: 'success' | 'error' | 'info') {
+  const visible = ref(true)
+
+  // 创建一个最简的 toast 组件
+  const ToastApp = {
+    setup() {
+      return () => visible.value
+        ? h('div', {
+            class: `toast toast-${type}`,
+            style: 'position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:9999;padding:8px 16px;border-radius:6px;color:#fff;background:#333'
+          }, message)
+        : null
+    }
+  }
+
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const app = createApp(ToastApp)
+  app.mount(container)
+
+  // 2秒后自动销毁
+  setTimeout(() => {
+    visible.value = false
+    setTimeout(() => {
+      app.unmount()
+      container.remove()
+    }, 300)
+  }, 2000)
+}
+
+export const toast = {
+  success: (msg: string) => createToast(msg, 'success'),
+  error:   (msg: string) => createToast(msg, 'error'),
+  info:    (msg: string) => createToast(msg, 'info'),
+}
+```
+
+用的时候：
+
+```typescript
+import { toast } from '@/utils/toast'
+
+// 在任意地方调用，不需要任何模板代码
+toast.success('保存成功')
+toast.error('网络错误，请重试')
+```
+
+---
+
+## Vue3：全局 Loading
+
+项目里接口请求时显示全屏 loading，可以在 axios 拦截器里统一管理，不用每个请求单独处理：
+
+```typescript
+// loading.ts
+import { createApp, ref, h } from 'vue'
+
+let app: ReturnType<typeof createApp> | null = null
+let container: HTMLElement | null = null
+let count = 0  // 计数，支持嵌套调用
+
+const LoadingApp = {
+  setup() {
+    return () => h('div', {
+      style: 'position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9999'
+    }, h('div', { style: 'color:#fff;font-size:14px' }, '加载中...'))
+  }
+}
+
+export const loading = {
+  show() {
+    count++
+    if (count > 1) return  // 已经显示中
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    app = createApp(LoadingApp)
+    app.mount(container)
+  },
+  hide() {
+    count = Math.max(0, count - 1)
+    if (count > 0) return  // 还有其他请求未完成
+    app?.unmount()
+    container?.remove()
+    app = null
+    container = null
+  }
+}
+```
+
+在 axios 拦截器里：
+
+```typescript
+// request.ts
+axios.interceptors.request.use(config => {
+  loading.show()
+  return config
+})
+
+axios.interceptors.response.use(
+  res => { loading.hide(); return res },
+  err => { loading.hide(); return Promise.reject(err) }
+)
+```
+
+---
+
+## Vue3：命令式确认弹窗
+
+比每次写 `<el-dialog>` + `visible` 状态方便得多：
+
+```typescript
+// confirm.ts
+export function confirm(message: string, title = '提示'): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ElMessageBox.confirm(message, title, {
+      confirmButtonText: '确认',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }).then(resolve).catch(reject)
+  })
+}
+```
+
+用的时候：
+
+```typescript
+async function handleDelete(id: number) {
+  try {
+    await confirm('确定要删除这条记录吗？')
+    await deleteRecord(id)
+    toast.success('删除成功')
+  } catch {
+    // 用户点了取消，什么都不做
+  }
+}
+```
+
+---
+
+## React：全局 Toast
+
+React 用 `ReactDOM.createRoot` 实现同样的效果：
+
+```typescript
+// toast.tsx
+import { createRoot } from 'react-dom/client'
+
+function ToastItem({ message, type }: { message: string; type: string }) {
+  return (
+    <div style={{
+      position: 'fixed', top: 60, left: '50%', transform: 'translateX(-50%)',
+      zIndex: 9999, padding: '8px 16px', borderRadius: 6,
+      background: type === 'success' ? '#22c55e' : '#ef4444', color: '#fff'
+    }}>
+      {message}
+    </div>
+  )
+}
+
+function createToast(message: string, type: 'success' | 'error') {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+
+  root.render(<ToastItem message={message} type={type} />)
+
+  setTimeout(() => {
+    root.unmount()
+    container.remove()
+  }, 2000)
+}
+
+export const toast = {
+  success: (msg: string) => createToast(msg, 'success'),
+  error:   (msg: string) => createToast(msg, 'error'),
+}
+```
+
+---
+
+## useRequest：封装请求状态
+
+无论 Vue 还是 React，页面里每个接口请求都要写 `loading`、`error`、`data` 三个状态，很重复。封装一个 `useRequest`：
+
+**React 版：**
+
+```typescript
+function useRequest<T>(fn: () => Promise<T>) {
+  const [data, setData] = useState<T | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const run = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await fn()
+      setData(result)
+    } catch (e) {
+      setError(e as Error)
+    } finally {
+      setLoading(false)
+    }
+  }, [fn])
+
+  return { data, loading, error, run }
+}
+
+// 用的时候
+function UserProfile({ id }: { id: number }) {
+  const { data, loading, run } = useRequest(() => fetchUser(id))
+
+  useEffect(() => { run() }, [id])
+
+  if (loading) return <Spinner />
+  return <div>{data?.name}</div>
+}
+```
+
+**Vue3 版：**
+
+```typescript
+function useRequest<T>(fn: () => Promise<T>) {
+  const data = ref<T | null>(null)
+  const loading = ref(false)
+  const error = ref<Error | null>(null)
+
+  async function run() {
+    loading.value = true
+    error.value = null
+    try {
+      data.value = await fn()
+    } catch (e) {
+      error.value = e as Error
+    } finally {
+      loading.value = false
+    }
+  }
+
+  return { data, loading, error, run }
+}
+```
+
+手写一遍的意义不是要在项目里用它，而是搞清楚「库帮你做了什么」。VueUse 的 `useFetch` 和 ahooks 的 `useRequest` 的核心就是上面这段逻辑，只是在此基础上加了缓存、防抖、轮询、竞态处理等更完整的功能。
+
+实际项目里如果已经引了这些库，直接用就好，没必要重复造轮子。但遇到问题排查的时候，知道内部怎么运作的人和不知道的人，差距很明显。

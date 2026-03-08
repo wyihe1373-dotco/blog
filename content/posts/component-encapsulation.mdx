@@ -1,0 +1,225 @@
+---
+title: "组件二次封装：减少重复代码的几个思路"
+description: "基于 Element UI 和 antd-mobile 的二次封装实践——同样的 props 写了一遍又一遍，封装之后省多少事"
+date: "2025-09-25"
+tags: ["组件封装", "Vue2", "React", "Element UI", "antd-mobile"]
+---
+
+## 为什么要二次封装
+
+用组件库的时候，有些场景会反复写同样的代码。以 Element UI 的表单为例：
+
+```vue
+<el-form-item label="手机号" prop="phone" :rules="[{ required: true, message: '请输入手机号' }]">
+  <el-input v-model="form.phone" placeholder="请输入手机号" maxlength="11" />
+</el-form-item>
+<el-form-item label="验证码" prop="code" :rules="[{ required: true, message: '请输入验证码' }]">
+  <el-input v-model="form.code" placeholder="请输入验证码" maxlength="6" />
+</el-form-item>
+```
+
+每个字段都要写 `label`、`prop`、`rules`、`placeholder`，项目里有几十个表单，这些样板代码加起来非常多。
+
+二次封装不是为了炫技，就是**把重复的部分沉到组件里，调用侧只写差异化的部分**。
+
+---
+
+## El-Table 列封装：统一格式化和空值处理
+
+项目里的表格列经常有这类需求：金额保留两位小数、日期格式化、空值显示 `--`。
+
+每列都写 `formatter` 太麻烦，封装一个 `TableColumn` 组件：
+
+```vue
+<!-- components/TableColumn.vue -->
+<template>
+  <el-table-column v-bind="$attrs" :formatter="format">
+    <template v-if="$slots.default" #default="scope">
+      <slot v-bind="scope" />
+    </template>
+  </el-table-column>
+</template>
+
+<script>
+export default {
+  inheritAttrs: false,
+  props: {
+    type: String, // 'money' | 'date' | 'percent'
+  },
+  methods: {
+    format(row, col, val) {
+      if (val === null || val === undefined || val === '') return '--'
+      if (this.type === 'money')   return Number(val).toFixed(2)
+      if (this.type === 'date')    return val.slice(0, 10)
+      if (this.type === 'percent') return (val * 100).toFixed(2) + '%'
+      return val
+    },
+  },
+}
+</script>
+```
+
+用的时候：
+
+```vue
+<TableColumn prop="amount"    label="金额"   type="money" />
+<TableColumn prop="createdAt" label="创建时间" type="date" />
+<TableColumn prop="rate"      label="收益率"  type="percent" />
+```
+
+比每列都写 `:formatter="..." ` 清爽很多，而且改格式规则时只改一处。
+
+---
+
+## El-Dialog 封装：内置 loading 和确认按钮
+
+业务里弹窗有几个固定套路：打开时 loading、关闭时 reset、底部有"取消/确认"按钮、确认时调接口再关闭。每次都要自己管这些状态很烦。
+
+封装一个 `ConfirmDialog`：
+
+```vue
+<!-- components/ConfirmDialog.vue -->
+<template>
+  <el-dialog
+    v-bind="$attrs"
+    :visible.sync="visible"
+    :close-on-click-modal="false"
+    @closed="$emit('reset')"
+  >
+    <slot />
+    <template #footer>
+      <el-button @click="visible = false">取消</el-button>
+      <el-button type="primary" :loading="loading" @click="handleConfirm">确认</el-button>
+    </template>
+  </el-dialog>
+</template>
+
+<script>
+export default {
+  inheritAttrs: false,
+  props: {
+    value: Boolean,
+    onConfirm: Function, // 返回 Promise
+  },
+  data: () => ({ loading: false }),
+  computed: {
+    visible: {
+      get() { return this.value },
+      set(v) { this.$emit('input', v) },
+    },
+  },
+  methods: {
+    async handleConfirm() {
+      if (!this.onConfirm) return
+      this.loading = true
+      try {
+        await this.onConfirm()
+        this.visible = false
+      } finally {
+        this.loading = false
+      }
+    },
+  },
+}
+</script>
+```
+
+调用侧：
+
+```vue
+<ConfirmDialog v-model="showDialog" title="提交配置" :on-confirm="submitForm" @reset="resetForm">
+  <el-form>...</el-form>
+</ConfirmDialog>
+```
+
+不用再管 loading 状态，接口报错也不会误关弹窗。
+
+---
+
+## antd-mobile：Popup 底部弹层封装
+
+H5 里底部弹出的选择器、确认框用得很多，每次用 `Popup` 都要写一套 header + 内容区 + 底部按钮。封装一个 `BottomSheet`：
+
+```tsx
+// components/BottomSheet.tsx
+interface Props {
+  visible: boolean
+  title?: string
+  onClose: () => void
+  onConfirm?: () => void | Promise<void>
+  children: React.ReactNode
+}
+
+export default function BottomSheet({ visible, title, onClose, onConfirm, children }: Props) {
+  const [loading, setLoading] = useState(false)
+
+  const handleConfirm = async () => {
+    if (!onConfirm) return
+    setLoading(true)
+    try {
+      await onConfirm()
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Popup visible={visible} onMaskClick={onClose} bodyStyle={{ borderRadius: '12px 12px 0 0' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <span className="text-sm text-gray-400" onClick={onClose}>取消</span>
+        {title && <span className="text-base font-medium">{title}</span>}
+        {onConfirm && (
+          <span className="text-sm text-blue-500" onClick={handleConfirm}>
+            {loading ? '提交中...' : '确认'}
+          </span>
+        )}
+      </div>
+      {/* Content */}
+      <div className="px-4 py-4">{children}</div>
+    </Popup>
+  )
+}
+```
+
+---
+
+## antd-mobile：Form.Item 联动封装
+
+H5 表单里经常有"选了 A 才显示 B"这种联动逻辑，如果每个字段都手写 `hidden` 判断，代码很乱。封装一个支持 `visible` 属性的 `FormItem`：
+
+```tsx
+// components/FormItem.tsx
+interface Props extends React.ComponentProps<typeof Form.Item> {
+  visible?: boolean
+}
+
+export default function FormItem({ visible = true, children, ...props }: Props) {
+  if (!visible) return null
+  return <Form.Item {...props}>{children}</Form.Item>
+}
+```
+
+用的时候：
+
+```tsx
+<FormItem name="type" label="账户类型">
+  <Selector options={typeOptions} />
+</FormItem>
+
+<FormItem name="bankCard" label="银行卡号" visible={type === 'bank'}>
+  <Input placeholder="请输入银行卡号" />
+</FormItem>
+```
+
+`visible={type === 'bank'}` 比到处写三元运算符干净多了，而且组件卸载时 antd-mobile 会自动清掉这个字段的值。
+
+---
+
+## 封装时的几个原则
+
+**透传 attrs 不要漏。** Vue 用 `v-bind="$attrs"` + `inheritAttrs: false`，React 用 `{...props}` spread，让原始组件的所有属性都能正常用，不然封装了还不如不封装。
+
+**只封装稳定的、重复的部分。** 如果某个弹窗只出现一次，直接写就行，不值得封装。封装是为了复用，不是为了"看起来更工程化"。
+
+**封装不等于限制。** 好的封装是**在默认行为之上加方便**，不应该限制掉原来能做的事。通过 `slot` / `children` / `attrs` 透传保持灵活性。

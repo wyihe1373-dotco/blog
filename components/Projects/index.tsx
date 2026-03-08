@@ -1,7 +1,6 @@
 'use client'
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useCallback } from 'react'
 import { motion, useScroll, useTransform, useSpring, useInView } from 'framer-motion'
-import { useTilt } from '@/lib/useTilt'
 
 const projects = [
   {
@@ -10,15 +9,17 @@ const projects = [
     description:
       '负责长桥证券 App 内嵌 H5 核心业务研发，主导基金持仓完整交易链路开发：持仓日报可视化、基金买入下单、跨账户转仓全流程。封装高复用业务组件库，统一 JSBridge 通信与 Token 鉴权，多技术栈（React + TS / Vue2 / Vue3）并行交付。',
     tags: ['React', 'TypeScript', 'Vue3', 'Vue2', 'JSBridge', 'H5'],
+    color: '#6366f1',
     gradient: 'bg-primary',
     num: '01',
   },
   {
-    title: '资产配置策略平台',
+    title: '招商银行 · 中台项目',
     period: '2022.09 – 2024.08',
     description:
       '面向业务经理的金融理财可视化配置平台。负责项目从零搭建，涵盖菜单路由权限体系、jsplumb 流程图绘制与保存、自定义区域拖拽复制、复杂表单缓存校验等，显著提升团队开发效率。',
     tags: ['Vue2', 'ElementUI', 'ECharts', 'jsplumb', 'Html2canvas'],
+    color: '#22d3ee',
     gradient: 'bg-cyan-500',
     num: '02',
   },
@@ -28,138 +29,143 @@ const projects = [
     description:
       '工厂信息化项目，包含质检流程改造、设备物料管理系统及关键设备数据大屏展示。驻场国企外派，独立负责全链路，配合建模工程师完成工厂 3D 模型展示与交互。',
     tags: ['Vue2', 'Three.js', 'UniApp', 'ECharts', '大屏可视化'],
+    color: '#a78bfa',
     gradient: 'bg-purple-500',
     num: '03',
   },
 ]
 
 function ProjectCard({ project, index }: { project: typeof projects[0]; index: number }) {
-  const { ref, onMouseMove, onMouseLeave } = useTilt(4)
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  const onMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const el = cardRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const x = (e.clientX - rect.left) / rect.width - 0.5
+    const y = (e.clientY - rect.top) / rect.height - 0.5
+    el.style.transform = `perspective(800px) rotateY(${x * 18}deg) rotateX(${-y * 12}deg) translateZ(20px) scale(1.03)`
+    el.style.boxShadow = `0 25px 60px rgba(0,0,0,0.5), 0 0 40px ${project.color}26`
+    el.style.setProperty('--card-mx', `${(x + 0.5) * 100}%`)
+    el.style.setProperty('--card-my', `${(y + 0.5) * 100}%`)
+    el.style.setProperty('--glare-x', `${(x + 0.5) * 100}%`)
+    el.style.setProperty('--glare-y', `${(y + 0.5) * 100}%`)
+  }, [project.color])
+
+  const onMouseLeave = useCallback(() => {
+    const el = cardRef.current
+    if (!el) return
+    el.style.transform = 'perspective(800px) rotateY(0deg) rotateX(0deg) translateZ(0) scale(1)'
+    el.style.boxShadow = '0 8px 32px rgba(0,0,0,0.35)'
+    el.style.setProperty('--card-mx', '50%')
+    el.style.setProperty('--card-my', '50%')
+    el.style.setProperty('--glare-x', '-100%')
+    el.style.setProperty('--glare-y', '50%')
+  }, [])
 
   return (
     <motion.div
-      className="shrink-0 relative overflow-hidden rounded-2xl p-px w-[calc(100vw-3rem)] sm:w-105 md:w-120"
+      className="shrink-0 w-[calc(100vw-3rem)] sm:w-105 md:w-120"
       variants={{
-        hidden: { opacity: 0, x: 50 },
-        visible: { opacity: 1, x: 0 },
+        hidden: { opacity: 0, y: 32, scale: 0.93 },
+        visible: { opacity: 1, y: 0, scale: 1 },
       }}
-      transition={{
-        duration: 0.7,
-        delay: index * 0.12,
-        ease: [0.16, 1, 0.3, 1],
-      }}
+      transition={{ duration: 0.65, delay: index * 0.13, ease: [0.16, 1, 0.3, 1] }}
     >
-      {/* Rotating light band */}
+      {/* Floating idle animation — each card has a slightly different timing */}
       <motion.div
-        className="absolute -inset-full pointer-events-none"
-        style={{
-          background: 'conic-gradient(from 0deg, transparent 0%, #6366f1 15%, #a78bfa 22%, #22d3ee 28%, transparent 40%)',
+        animate={{ y: [0, -8, 0] }}
+        transition={{
+          duration: 3.2 + index * 0.7,
+          repeat: Infinity,
+          ease: 'easeInOut',
+          delay: index * 0.5 + 0.8,
         }}
-        animate={{ rotate: 360 }}
-        transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
-      />
-
-      <div
-        ref={ref}
-        onMouseMove={onMouseMove}
-        onMouseLeave={onMouseLeave}
-        className="tilt-card relative rounded-[14px] overflow-hidden group cursor-default min-h-70 flex flex-col p-7"
-        style={{ background: 'rgba(7, 7, 24, 0.95)', backdropFilter: 'blur(12px)', transition: 'transform 0.25s ease' }}
       >
-        {/* Gradient halo */}
-        <div className={`absolute -top-20 -right-20 w-64 h-64 rounded-full opacity-15 blur-3xl group-hover:opacity-30 transition-opacity duration-500 ${project.gradient}`} />
-        <div className="absolute inset-0 rounded-[14px] border border-white/10 group-hover:border-white/20 transition-colors duration-300" />
+        <div
+          ref={cardRef}
+          onMouseMove={onMouseMove}
+          onMouseLeave={onMouseLeave}
+          className="tilt-card relative rounded-2xl overflow-hidden group cursor-default min-h-70 flex flex-col p-7"
+          style={{
+            background: 'rgba(7, 7, 24, 0.95)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
+            transition: 'transform 0.22s ease, box-shadow 0.22s ease',
+          }}
+        >
+          {/* Colored halo */}
+          <div
+            className={`absolute -top-20 -right-20 w-64 h-64 rounded-full opacity-15 blur-3xl group-hover:opacity-30 transition-opacity duration-500 ${project.gradient}`}
+          />
 
-        {/* Number watermark */}
-        <span className="absolute top-5 right-6 text-6xl font-bold text-white/[0.04] select-none font-mono leading-none">
-          {project.num}
-        </span>
+          {/* Glare — follows mouse position */}
+          <div
+            className="absolute inset-0 pointer-events-none rounded-2xl"
+            style={{
+              background:
+                'radial-gradient(circle at var(--glare-x, -100%) var(--glare-y, 50%), rgba(255,255,255,0.13) 0%, transparent 55%)',
+            }}
+          />
 
-        <div className="relative z-10 flex flex-col h-full">
-          {/* Header */}
-          <div className="flex items-start justify-between mb-4">
-            <div className={`w-2 h-2 rounded-full mt-1.5 mr-3 shrink-0 ${project.gradient}`} />
-            <div className="flex-1">
-              <h3 className="text-white font-bold text-xl leading-tight group-hover:text-primary transition-colors duration-200">
-                {project.title}
-              </h3>
-              <p className="text-slate-500 text-xs font-mono mt-1">{project.period}</p>
+          {/* Number watermark */}
+          <span className="absolute top-5 right-6 text-6xl font-bold text-white/4 select-none font-mono leading-none">
+            {project.num}
+          </span>
+
+          <div className="relative z-10 flex flex-col h-full">
+            <div className="flex items-start justify-between mb-4">
+              <div className={`w-2 h-2 rounded-full mt-1.5 mr-3 shrink-0 ${project.gradient}`} />
+              <div className="flex-1">
+                <h3 className="text-white font-bold text-xl leading-tight group-hover:text-primary transition-colors duration-200">
+                  {project.title}
+                </h3>
+                <p className="text-slate-500 text-xs font-mono mt-1">{project.period}</p>
+              </div>
+            </div>
+
+            <p className="text-slate-400 text-sm leading-relaxed flex-1 line-clamp-4">
+              {project.description}
+            </p>
+
+            <div className="flex flex-wrap gap-1.5 mt-4 pt-4 border-t border-white/6">
+              {project.tags.map(tag => (
+                <span key={tag} className="px-2 py-0.5 text-xs font-mono text-accent/80 bg-accent/10 rounded">
+                  {tag}
+                </span>
+              ))}
             </div>
           </div>
-
-          {/* Description */}
-          <p className="text-slate-400 text-sm leading-relaxed flex-1 line-clamp-4">
-            {project.description}
-          </p>
-
-          {/* Tags */}
-          <div className="flex flex-wrap gap-1.5 mt-4 pt-4 border-t border-white/[0.06]">
-            {project.tags.map(tag => (
-              <span key={tag} className="px-2 py-0.5 text-xs font-mono text-accent/80 bg-accent/10 rounded">
-                {tag}
-              </span>
-            ))}
-          </div>
         </div>
-      </div>
+      </motion.div>
     </motion.div>
   )
 }
 
 export default function Projects() {
-  const trackRef = useRef<HTMLDivElement>(null)
   const sectionRef = useRef<HTMLDivElement>(null)
-  const [dragLeft, setDragLeft] = useState(-800)
-  const [canDrag, setCanDrag] = useState(true)
   const inView = useInView(sectionRef, { once: true, margin: '-100px 0px' })
 
-  useEffect(() => {
-    const vw = window.innerWidth
-    const cardW = vw < 640 ? vw - 48 : vw < 768 ? 420 : 480
-    const gap = 20
-    const totalW = projects.length * (cardW + gap) - gap
-    const overflow = totalW - vw + 48
-    if (overflow <= 0) {
-      setCanDrag(false)
-      setDragLeft(0)
-    } else {
-      setDragLeft(-overflow)
-    }
-  }, [])
-
-  // GSAP-style scroll progress for header parallax
   const { scrollYProgress } = useScroll({ target: sectionRef, offset: ['start end', 'end start'] })
   const rawY = useTransform(scrollYProgress, [0, 1], [30, -30])
   const headerY = useSpring(rawY, { stiffness: 80, damping: 20 })
 
   return (
-    <section id="projects" className="py-16 md:py-24 overflow-hidden" ref={sectionRef}>
-      {/* Header with parallax */}
+    <section id="projects" className="pt-7.5 pb-16 md:pb-24" ref={sectionRef}>
       <motion.div className="px-6 max-w-6xl mx-auto mb-12" style={{ y: headerY }}>
         <p className="shimmer-text font-mono text-sm tracking-widest mb-2">PORTFOLIO</p>
-        <div className="flex items-end justify-between">
-          <h2 className="text-3xl md:text-5xl font-bold text-white tracking-tight">主要项目</h2>
-        </div>
+        <h2 className="text-3xl md:text-5xl font-bold text-white tracking-tight">主要项目</h2>
       </motion.div>
 
-      {/* Horizontal drag track */}
       <motion.div
-        ref={trackRef}
-        className={`flex gap-5 px-6 select-none flex-wrap justify-center ${canDrag ? 'sm:flex-nowrap sm:cursor-grab sm:active:cursor-grabbing' : ''}`}
-        drag={canDrag ? 'x' : false}
-        dragConstraints={{ right: 0, left: dragLeft }}
-        dragElastic={0.08}
-        dragTransition={{ bounceStiffness: 300, bounceDamping: 30 }}
-        whileTap={{ cursor: 'grabbing' }}
+        className="flex flex-wrap gap-5 px-6 max-w-6xl mx-auto justify-center"
         initial="hidden"
         animate={inView ? 'visible' : 'hidden'}
       >
         {projects.map((project, i) => (
           <ProjectCard key={project.title} project={project} index={i} />
         ))}
-
-        {/* End spacer */}
-        <div className="shrink-0 w-6" />
       </motion.div>
     </section>
   )

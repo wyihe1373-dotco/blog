@@ -1,100 +1,103 @@
 'use client'
-import { useRef, useState, useEffect } from 'react'
-import { motion, useInView } from 'framer-motion'
+import { useRef, useState } from 'react'
+import { motion, useInView, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import type { PostMeta } from '@/lib/posts'
 
 const MotionLink = motion(Link)
 
+const CATEGORIES = [
+  { label: '全部', tags: [] },
+  { label: 'JS 基础', tags: ['JavaScript', 'ES6', '基础', '数组', '工具库'] },
+  { label: '学习笔记', tags: ['React', 'Vue3', 'Vue2', 'Next.js', '学习笔记', 'Composition API'] },
+  { label: '组件封装', tags: ['组件封装', '全局调用', '设计思路'] },
+  { label: '工程化', tags: ['工程化', 'TypeScript', 'Vite', 'Monorepo', 'AI', '代码生成', 'CI/CD'] },
+  { label: '业务实践', tags: ['前端工程', '性能优化', '安全', '微信支付', 'H5', 'Canvas'] },
+]
+
 export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [dragLeft, setDragLeft] = useState(-800)
-  const [canDrag, setCanDrag] = useState(true)
-  const [cardW, setCardW] = useState(380)
   const inView = useInView(ref, { once: true, margin: '-80px 0px' })
+  const [active, setActive] = useState('全部')
 
-  useEffect(() => {
-    const vw = window.innerWidth
-    const w = vw < 640 ? vw - 48 : vw < 768 ? 340 : 380
-    setCardW(w)
-    const totalW = posts.length * (w + 20)
-    const overflow = totalW - vw + 48
-    if (overflow <= 0) {
-      setCanDrag(false)
-      setDragLeft(0)
-    } else {
-      setDragLeft(-overflow)
-    }
-  }, [posts.length])
+  const filtered = active === '全部'
+    ? posts
+    : posts.filter(p => CATEGORIES.find(c => c.label === active)!.tags.some(t => p.tags.includes(t)))
 
   return (
-    <motion.div
-      ref={ref}
-      className={`flex gap-5 px-6 select-none flex-wrap justify-center ${canDrag ? 'sm:flex-nowrap sm:cursor-grab sm:active:cursor-grabbing' : ''}`}
-      drag={canDrag ? 'x' : false}
-      dragConstraints={{ right: 0, left: dragLeft }}
-      dragElastic={0.08}
-      dragTransition={{ bounceStiffness: 300, bounceDamping: 30 }}
-      whileTap={canDrag ? { cursor: 'grabbing' } : {}}
-      initial="hidden"
-      animate={inView ? 'visible' : 'hidden'}
-    >
-      {posts.map((post, i) => (
-        <motion.div
-          key={post.slug}
-          className="relative shrink-0 rounded-2xl overflow-hidden p-px"
-          style={{ width: cardW }}
-          variants={{
-            hidden: { opacity: 0, y: 30 },
-            visible: { opacity: 1, y: 0 },
-          }}
-          transition={{ delay: i * 0.1, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        >
-          {/* Rotating light band */}
-          <motion.div
-            className="absolute -inset-full pointer-events-none"
-            style={{
-              background: 'conic-gradient(from 0deg, transparent 0%, #6366f1 15%, #a78bfa 22%, #22d3ee 28%, transparent 40%)',
-            }}
-            animate={{ rotate: 360 }}
-            transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
-          />
-
-          {/* Card */}
-          <MotionLink
-            href={`/blog/${post.slug}/`}
-            className="relative rounded-[14px] p-6 group transition-all block h-full"
-            style={{ background: 'rgba(7, 7, 24, 0.95)', backdropFilter: 'blur(12px)' }}
-            onClick={(e) => {
-              const el = ref.current
-              if (!el) return
-              const match = el.style.transform?.match(/-?\d+\.?\d*/)
-              const delta = Math.abs(parseFloat(match?.[0] ?? '0'))
-              if (delta > 5) e.preventDefault()
-            }}
+    <div ref={ref}>
+      {/* Category tabs */}
+      <div className="flex gap-2 px-6 max-w-6xl mx-auto mb-8 flex-wrap">
+        {CATEGORIES.map(cat => (
+          <button
+            key={cat.label}
+            onClick={() => setActive(cat.label)}
+            className={`relative px-4 py-1.5 rounded-full text-sm font-mono transition-colors duration-200 cursor-pointer ${
+              active === cat.label
+                ? 'text-white'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
           >
-            <div className="flex items-center justify-between mb-3 flex-wrap">
-              <div className="flex gap-2 flex-wrap">
-                {post.tags.slice(0, 2).map(tag => (
-                  <span key={tag} className="text-xs font-mono text-accent bg-accent/10 px-2 py-1 rounded">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-              <span className="text-xs text-slate-500 font-mono shrink-0 ml-2">{post.readingTime}</span>
-            </div>
+            {active === cat.label && (
+              <motion.span
+                layoutId="cat-pill"
+                className="absolute inset-0 rounded-full bg-primary/20 border border-primary/40 cursor-pointer"
+                transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+              />
+            )}
+            <span className="relative">{cat.label}</span>
+          </button>
+        ))}
+      </div>
 
-            <h3 className="text-white font-semibold text-lg mb-2 group-hover:text-primary transition-colors leading-tight">
-              {post.title}
-            </h3>
-            <p className="text-slate-400 text-sm mb-4 line-clamp-3">{post.description}</p>
+      {/* Cards */}
+      <div className="flex flex-wrap gap-5 px-6 justify-center max-w-6xl mx-auto">
+        <AnimatePresence mode="popLayout">
+          {filtered.map((post, i) => (
+            <motion.div
+              key={post.slug}
+              className="relative rounded-2xl overflow-hidden p-px w-[calc(100vw-3rem)] sm:w-80 md:w-88"
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={inView ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 20, scale: 0.97 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ delay: i * 0.05, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              layout
+            >
+              {/* Rotating light band */}
+              <motion.div
+                className="absolute -inset-full pointer-events-none"
+                style={{
+                  background: 'conic-gradient(from 0deg, transparent 0%, #6366f1 15%, #a78bfa 22%, #22d3ee 28%, transparent 40%)',
+                }}
+                animate={{ rotate: 360 }}
+                transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+              />
 
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500 font-mono">{post.date}</span>
-            </div>
-          </MotionLink>
-        </motion.div>
-      ))}
-    </motion.div>
+              {/* Card */}
+              <MotionLink
+                href={`/blog/${post.slug}/`}
+                className="relative rounded-[14px] p-6 group transition-all block h-full"
+                style={{ background: 'rgba(7, 7, 24, 0.95)', backdropFilter: 'blur(12px)' }}
+              >
+                <div className="flex gap-2 flex-wrap mb-3">
+                  {post.tags.slice(0, 2).map(tag => (
+                    <span key={tag} className="text-xs font-mono text-accent bg-accent/10 px-2 py-1 rounded">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+
+                <h3 className="text-white font-semibold text-lg mb-2 group-hover:text-primary transition-colors leading-tight">
+                  {post.title}
+                </h3>
+                <p className="text-slate-400 text-sm mb-4 line-clamp-3">{post.description}</p>
+
+                <span className="text-xs text-slate-500 font-mono">{post.date}</span>
+              </MotionLink>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </div>
   )
 }

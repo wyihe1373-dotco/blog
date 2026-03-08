@@ -1,0 +1,227 @@
+---
+title: "组件封装实战：以 Drawer 和 CapsuleTabs 为例"
+description: "从两个真实项目组件出发，拆解封装时的具体决策：什么该暴露、什么该隐藏、边界怎么划"
+date: "2025-08-10"
+tags: ["组件封装", "设计思路", "React"]
+---
+
+## 背景
+
+H5 项目里用了自建的组件库 matrix-ui，里面有两个组件是从零开始封装的：`Drawer` 和 `CapsuleTabs`。
+
+这篇用这两个真实案例，拆解封装时的具体决策过程。
+
+---
+
+## Drawer：封装一个业务弹窗
+
+### 为什么要封
+
+antd-mobile 有一个 `Popup` 组件，是最基础的弹出层，内容区域完全空白，没有 padding、没有标题、没有按钮，什么都要自己加。
+
+项目里的弹窗基本都长一个样：顶部有标题 + 关闭按钮，中间是可滚动的内容，底部是确认/取消按钮。这个结构在十几个页面里重复出现，每次都手写是不可接受的。
+
+所以决定封一个 `Drawer`，把这个「标准弹窗结构」固化下来。
+
+### 封了什么
+
+```tsx
+export interface DrawerProps extends PopupProps {
+  title?: string
+  buttons?: ButtonProps[]
+  buttonSticky?: boolean
+  backgroundColor?: string
+  headerButtons?: ButtonProps[]
+  mode?: 'default' | 'us'
+}
+```
+
+props 很克制，只暴露了几个真正需要控制的东西：
+
+- `title`：标题文本，有了它组件会自动渲染标题行 + 关闭按钮
+- `buttons`：底部按钮组配置，不需要的弹窗不传就没有底部按钮
+- `buttonSticky`：按钮组是否固定在底部（内容很长时有用）
+- `backgroundColor`：背景色，支持 CSS 变量，有默认值
+- `headerButtons`：无标题时的顶部操作按钮（比如「取消」「确认」两个文字按钮）
+- `mode`：区分内地/美股版样式差异，只影响关闭按钮颜色
+
+内部结构是固定的：标题吸顶 → 内容可滚动 → 按钮组可选固定底部 → SafeArea 安全区。调用方不需要关心这些。
+
+### 关键决策：attrs 透传
+
+`DrawerProps extends PopupProps`，然后：
+
+```tsx
+const { title, buttons, ..., ...rest } = props
+
+return (
+  <Popup {...rest} onClose={onClose} ...>
+    ...
+  </Popup>
+)
+```
+
+`...rest` 把所有 `Popup` 原有的属性原封不动传下去。这意味着 `visible`、`closeOnMaskClick`、`destroyOnClose`、`afterClose` 这些底层能力全部保留，不会因为加了一层封装就失效。
+
+**这是封装里最容易漏的一步。** 如果不做 attrs 透传，调用方会发现 `destroyOnClose` 不生效，然后绕过封装直接用 `Popup`，封装就废了。
+
+### 调用方看到的
+
+```tsx
+// 调用方只需要关心「弹什么内容」「底部有什么按钮」
+<Drawer
+  visible={visible}
+  title="选择交割方式"
+  onClose={() => setVisible(false)}
+  buttons={[
+    { text: '取消', onClick: () => setVisible(false) },
+    { text: '确认', type: 'primary', onClick: handleConfirm },
+  ]}
+>
+  <SettlementOptions value={selected} onChange={setSelected} />
+</Drawer>
+```
+
+标题样式、关闭按钮、padding、安全区——全部不用管。
+
+---
+
+## CapsuleTabs：封装一个胶囊 Tab
+
+### 为什么要封
+
+antd-mobile 的 `CapsuleTabs` 用的是复合组件模式：
+
+```tsx
+// antd-mobile 原始用法
+<CapsuleTabs>
+  <CapsuleTabs.Tab title="全部" key="all">
+    内容
+  </CapsuleTabs.Tab>
+  <CapsuleTabs.Tab title="持仓" key="position">
+    内容
+  </CapsuleTabs.Tab>
+</CapsuleTabs>
+```
+
+这个写法有几个问题：
+1. Tab 数量多的时候 JSX 很长，不能用数组直接驱动渲染
+2. 没有左右滑动切换，H5 的 Tab 通常需要这个
+3. tab 超出一行时没有右侧渐变遮罩提示用户可以横滑
+4. 不支持吸顶
+
+需要的功能和原始组件差距太大，与其一个个 hack，不如重新封装，只是对外保持相似的接口。
+
+### 接口设计：items 驱动
+
+放弃了复合组件模式，改成 `items` 数组配置：
+
+```tsx
+export type CapsuleTab = {
+  key: string
+  title: string | React.ReactNode
+  disabled?: boolean
+  children?: React.ReactNode
+}
+
+export interface CapsuleTabsProps {
+  items: CapsuleTab[]
+  activeKey?: string | null
+  defaultActiveKey?: string | null
+  onChange?: (key: string) => void
+  enableSwiper?: boolean      // 是否支持左右滑动
+  layout?: 'single' | 'multiple'  // 单行/多行
+  backgroundType?: 'white' | 'grey' | 'inverted'
+  destroyOnClose?: boolean
+  sticky?: boolean
+  // ... className/style 透传
+}
+```
+
+调用方：
+
+```tsx
+<CapsuleTabs
+  items={[
+    { key: 'all',      title: '全部',  children: <AllList /> },
+    { key: 'position', title: '持仓',  children: <PositionList /> },
+    { key: 'order',    title: '订单',  children: <OrderList /> },
+  ]}
+  defaultActiveKey="all"
+  enableSwiper
+/>
+```
+
+比复合组件模式简洁很多，而且可以直接从接口数据生成 `items`。
+
+### 把交互逻辑抽成 hook
+
+Tab 切换涉及两件事同时联动：头部 Tab 高亮 + 下方 Swiper 跟着滚动。这个状态管理逻辑抽成了 `useSwiperableTab`：
+
+```tsx
+const { selectedIndex, swiperRef, handleChange } = useSwiperableTab({
+  items,
+  activeKey,
+  defaultActiveKey,
+  onChange,
+  enableSwiper
+})
+```
+
+组件内部不直接操作 `selectedIndex`，全交给这个 hook。好处是：
+
+1. 组件代码只管渲染，逻辑在 hook 里测试
+2. 如果将来 Swiper 换库，只改 hook，组件不动
+
+### 右侧渐变遮罩
+
+单行模式下 tab 太多会溢出横滑，需要一个右侧渐变提示用户。这个逻辑用滚动事件检测：
+
+```tsx
+useEffect(() => {
+  if (layout !== 'single') return
+  const list = tabListRef.current
+
+  const handleScroll = () => {
+    // 如果还没滚到底，说明右边还有内容，加 right-mask class
+    if (list.scrollLeft < list.scrollWidth - list.clientWidth) {
+      setSingleLineMask('right-mask')
+    } else {
+      setSingleLineMask('')
+    }
+  }
+
+  list.addEventListener('scroll', handleScroll)
+  handleScroll() // 初始判断一次
+
+  return () => list.removeEventListener('scroll', handleScroll)
+}, [layout, tabListRef.current])
+```
+
+`right-mask` 对应 CSS 里的一个 `::after` 渐变层。这个检测逻辑调用方不需要知道，完全内聚在组件里。
+
+### backgroundType 枚举而不是 className
+
+组件提供了三种背景样式：白底、灰底、反转（选中时深色背景白字）。
+
+直接让调用方传 `className` 也能做，但那样就失去了「设计约束」——调用方可能传任意颜色，导致视觉不一致。用枚举把选项限死：
+
+```tsx
+backgroundType?: 'white' | 'grey' | 'inverted'
+```
+
+调用方只能在这三种里选，保证全项目视觉统一。这是「设计系统」思路：**提供有限的、有意义的选项，而不是无限的灵活度**。
+
+---
+
+## 两个案例的共同点
+
+回看这两个组件，封装的决策逻辑是一致的：
+
+**固化重复的结构，透传底层的能力。**
+
+Drawer 固化了「标题 + 内容 + 按钮」的布局结构，但 `visible`、`destroyOnClose`、`afterClose` 这些 Popup 原有的控制能力全部保留。
+
+CapsuleTabs 固化了「Tab + Swiper 联动」的交互结构，但 `activeKey`/`onChange` 受控模式、`className`/`style` 样式扩展全部保留。
+
+封装最怕的就是把底层的能力挡掉了，然后调用方想用某个功能只能绕开封装。只要 attrs 透传做到位，这个问题基本就解决了。

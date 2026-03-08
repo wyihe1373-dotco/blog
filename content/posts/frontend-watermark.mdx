@@ -1,0 +1,115 @@
+---
+title: "前端水印方案：从简单到防篡改"
+description: "给页面加水印这件事，做简单版很容易，但真要防用户截图删水印就需要多想一层"
+date: "2023-08-14"
+tags: ["前端工程", "Canvas", "安全"]
+---
+
+## 需求背景
+
+在做资产配置策略平台的时候，图片下载时需要加上行内的水印。
+
+---
+
+## 方案一：CSS + 伪元素（最简单，不防改）
+
+```css
+body::before {
+  content: "王一贺 19972037939";
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  opacity: 0.08;
+  font-size: 16px;
+  color: #000;
+  transform: rotate(-30deg);
+  pointer-events: none;
+  z-index: 9999;
+}
+```
+
+五分钟能写完，但用户打开开发者工具就能删掉这个伪元素，防不住有心人。
+
+---
+
+## 方案二：Canvas 生成水印图片
+
+用 Canvas 生成一个平铺的水印图，设为背景：
+
+```typescript
+function createWatermark(text: string): string {
+  const canvas = document.createElement('canvas')
+  canvas.width = 200
+  canvas.height = 120
+  const ctx = canvas.getContext('2d')!
+
+  ctx.rotate((-25 * Math.PI) / 180)
+  ctx.font = '14px sans-serif'
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.08)'
+  ctx.fillText(text, 10, 80)
+
+  return canvas.toDataURL()
+}
+
+function applyWatermark(text: string) {
+  const url = createWatermark(text)
+  const div = document.createElement('div')
+  Object.assign(div.style, {
+    position: 'fixed',
+    top: '0', left: '0',
+    width: '100%', height: '100%',
+    backgroundImage: `url(${url})`,
+    backgroundRepeat: 'repeat',
+    pointerEvents: 'none',
+    zIndex: '9999',
+  })
+  div.id = '__watermark__'
+  document.body.appendChild(div)
+}
+```
+
+比纯 CSS 强，图片是 base64 的，删起来没那么直接。但如果用户删掉这个 div，水印就没了。
+
+---
+
+## 进阶思考：MutationObserver 防删除
+
+加个监听，水印被删就重新加：
+
+```typescript
+function watchWatermark(text: string) {
+  applyWatermark(text)
+
+  const observer = new MutationObserver(() => {
+    const el = document.getElementById('__watermark__')
+    if (!el) {
+      // 水印 div 被删了，重新加
+      applyWatermark(text)
+    } else if (el.style.display === 'none' || el.style.opacity === '0') {
+      // 被隐藏了，恢复
+      el.style.display = ''
+      el.style.opacity = ''
+    }
+  })
+
+  observer.observe(document.body, {
+    childList: true,      // 监听子节点增删
+    subtree: true,        // 递归监听
+    attributes: true,     // 监听属性变化
+    attributeFilter: ['style', 'class'],
+  })
+}
+```
+
+这样即使用户在控制台删掉水印 div，下一帧就会重新出现。
+
+---
+
+## 实际使用中的一些细节
+
+**水印内容：** 放用户 ID 或手机号尾号，不要放全部敏感信息，水印是明文展示的。
+
+**透明度：** 太深影响阅读，太浅截图里看不出来。0.06 ~ 0.10 之间比较合适，深色背景下要稍微调高一点。
+
+**性能：** Canvas 生成 DataURL 要控制频率，别每次页面切换都重新生成，可以缓存起来按用户 ID 做 key。
+
+**不要过度设计：** 水印防不住截图后 PS 掉，更防不住用第三方工具截。主要作用是**提高篡改成本**和**事后溯源**，不是万能的。

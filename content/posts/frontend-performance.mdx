@@ -1,0 +1,264 @@
+---
+title: "前端性能优化：我在项目里真正用过的那些手段"
+description: "不是所有优化都值得做——这篇只写我实际测过有效果的，以及怎么知道优化有没有用"
+date: "2025-11-20"
+tags: ["性能优化", "前端工程", "React"]
+---
+
+## 先说一个观点
+
+性能优化最大的坑是**优化了不该优化的地方**。在没有数据支撑的情况下做优化，很可能花了一周时间，用户感知不到任何变化。
+
+所以我的习惯是：**先测量，再优化，再测量**。知道瓶颈在哪，才知道该动哪里。
+
+---
+
+## 怎么找瓶颈
+
+**加载性能：**
+- Chrome DevTools → Network 面板，看 LCP 资源（最大内容绘制）是什么，有多大
+- Lighthouse 跑分，看 FCP / LCP / TBT 这几个指标
+- `web-vitals` 库埋点，线上真实用户数据比 Lighthouse 更有参考价值
+
+```typescript
+import { getCLS, getFID, getLCP, getFCP, getTTFB } from 'web-vitals'
+
+getCLS(console.log)
+getLCP(console.log)
+getFCP(console.log)
+```
+
+**运行时性能：**
+- Chrome DevTools → Performance 面板，录制一段操作，看哪个函数占用时间多
+- React DevTools → Profiler，看哪个组件 render 次数不正常
+
+---
+
+## 加载优化：减少首屏 JS 体积
+
+这是收益最大的一类优化。H5 项目里单 chunk 打出 2MB 以上是很常见的问题。
+
+**分包：**
+```javascript
+// vite.config.ts
+manualChunks: {
+  vendor: ['react', 'react-dom'],
+  charts: ['echarts'],   // 图表库单独拆出来
+  utils: ['lodash-es', 'dayjs'],
+}
+```
+
+**按需加载路由：**
+```tsx
+import { lazy, Suspense } from 'react'
+const HeavyPage = lazy(() => import('./HeavyPage'))
+
+// 用的时候
+<Suspense fallback={<Loading />}>
+  <HeavyPage />
+</Suspense>
+```
+
+**效果：** 我们一个项目首屏 JS 从 1.8MB 降到 420KB，LCP 从 4.2s 降到 1.6s。光是拆包就干掉了大部分。
+
+---
+
+## React 渲染优化
+
+先说什么情况**不需要优化**：大多数组件重渲染开销很低，不必要的 `useMemo` 和 `memo` 反而会增加代码复杂度。
+
+真正需要处理的情况：
+
+**大列表频繁重渲染：**
+```tsx
+// ❌ 父组件更新，列表里每个 item 都重渲染
+{list.map(item => <ListItem key={item.id} item={item} />)}
+
+// ✅ 用 memo，item 引用不变就不重渲染
+const ListItem = memo(({ item }) => {
+  return <div>{item.name}</div>
+})
+```
+
+**稳定的回调函数：**
+```tsx
+// ❌ 每次父组件渲染都生成新函数，子组件 memo 失效
+const handleClick = () => doSomething(id)
+
+// ✅ 依赖不变时函数引用稳定
+const handleClick = useCallback(() => doSomething(id), [id])
+```
+
+**重计算：**
+```tsx
+// ❌ 每次渲染都重新跑大量计算
+const result = heavyCompute(data)
+
+// ✅ data 不变就用缓存值
+const result = useMemo(() => heavyCompute(data), [data])
+```
+
+---
+
+## 长列表虚拟化
+
+如果列表有几百上千条，DOM 节点太多本身就是性能问题，memo 解决不了。这时候用虚拟列表：
+
+```bash
+npm install @tanstack/react-virtual
+```
+
+```tsx
+import { useVirtualizer } from '@tanstack/react-virtual'
+
+const rowVirtualizer = useVirtualizer({
+  count: list.length,
+  getScrollElement: () => parentRef.current,
+  estimateSize: () => 60,  // 每行预估高度
+})
+
+return (
+  <div ref={parentRef} style={{ height: '400px', overflow: 'auto' }}>
+    <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
+      {rowVirtualizer.getVirtualItems().map(virtualRow => (
+        <div
+          key={virtualRow.index}
+          style={{
+            position: 'absolute',
+            top: `${virtualRow.start}px`,
+            width: '100%',
+          }}
+        >
+          {list[virtualRow.index].name}
+        </div>
+      ))}
+    </div>
+  </div>
+)
+```
+
+只渲染可视区域内的 DOM，1000 条列表滑动依然 60fps。
+
+---
+
+## 图片优化
+
+- 用 WebP 格式，比 JPG 小 30% 左右
+- 首屏以外的图片加 `loading="lazy"`
+- 大图先加载低分辨率占位，再替换高清图（渐进式加载）
+
+```html
+<img src="thumb.jpg" data-src="full.jpg" loading="lazy" />
+```
+
+---
+
+## 实践：这个博客站的加载优化
+
+做这个站的时候也顺手做了几个优化，思路和上面说的一样。
+
+**去掉没有用到的依赖**
+
+排查了一下 `package.json`，发现有几个当时引进来后来没用到的库：`three.js`（约 600KB）、`gsap`（约 200KB）。直接 `npm uninstall` 掉，打包体积立刻小了一截。
+
+依赖这种东西容易只进不出，项目迭代过程中换了方案、改了实现，旧的包忘了删，时间长了越堆越多。
+
+**WebGL 粒子效果延迟加载**
+
+首屏 Hero 区域有一个 OGL WebGL 粒子背景，用户刚进来其实不需要立刻渲染它，也不能在服务端跑。用 `next/dynamic` 拆出去：
+
+```tsx
+const Particles = dynamic(() => import('@/components/Particles'), { ssr: false })
+```
+
+两个作用：一是 OGL 库从主包拆成独立 chunk，首屏不需要解析这部分 JS；二是 `ssr: false` 让它只在客户端加载，不占服务端渲染时间。
+
+**折叠内容分包**
+
+首屏只需要 Hero 区域，下面的「关于我」「项目」「工作亮点」「联系我」都在折叠以下，用 `next/dynamic` 按需加载：
+
+```tsx
+const Projects = dynamic(() => import('@/components/Projects'))
+const Blog     = dynamic(() => import('@/components/Blog'))
+```
+
+Next.js 的 `dynamic` 默认保留 SSR（服务端仍会预渲染 HTML），只是把对应的 JS 拆成独立 chunk，等组件进入视口再下载执行。静态站不会有白屏，只是 JS 的解析执行推迟了。
+
+这几个改动加起来，首屏需要解析的 JS 减少了大概 40%。
+
+---
+
+## 我的优先级排序
+
+1. **减少首屏 JS 体积**（分包、路由懒加载）—— 收益最大
+2. **图片优化**（WebP + 懒加载）—— 成本低，效果明显
+3. **虚拟列表**（如果有长列表）—— 特定场景必须做
+4. **React render 优化**（memo / useMemo）—— 先测量再做，别瞎加
+5. **其他**（HTTP/2、CDN、缓存策略等）—— 这些通常是运维层面，前端能做的有限
+
+---
+
+## 平时开发的一些细节习惯
+
+性能优化不用每次都搞成专项，更多是跟着迭代走，平时写代码时注意一些细节，积累下来效果也不差。问题出现了及时分析、及时改，比攒到最后一起搞要轻松得多。
+
+**不乱用 useEffect**
+
+`useEffect` 里发请求、做数据处理，容易写出依赖数组不干净的代码，导致请求重复触发。每次写 `useEffect` 前先问一句：这个逻辑真的需要在副作用里吗？能用事件回调、computed 或者 useMemo 解决的，就不用 effect。
+
+**避免在渲染函数里做大量计算**
+
+```tsx
+// ❌ 每次渲染都跑一遍
+function List({ data }) {
+  const processed = data.map(item => heavyTransform(item))
+  return <ul>{processed.map(item => <li>{item}</li>)}</ul>
+}
+
+// ✅ 只在 data 变化时才重新计算
+function List({ data }) {
+  const processed = useMemo(() => data.map(item => heavyTransform(item)), [data])
+  return <ul>{processed.map(item => <li>{item}</li>)}</ul>
+}
+```
+
+**事件监听记得清理**
+
+```tsx
+useEffect(() => {
+  window.addEventListener('scroll', handleScroll)
+  return () => window.removeEventListener('scroll', handleScroll) // ← 别忘了
+}, [])
+```
+
+漏了清理函数，组件卸载后监听还在，页面里攒多了会有内存泄漏，滚动/resize 这类高频事件影响更明显。
+
+**图片尺寸和格式**
+
+上传到项目里的图片顺手压一下，我用 [squoosh](https://squoosh.app/)，能无损压掉 60-70%。格式首选 WebP，兼容性现在已经很好了。
+
+**不要滥用全局状态**
+
+把所有东西都放进 Pinia/Redux 是个常见的反模式。全局状态的订阅者越多，一次更新触发的重渲染就越多。判断标准：**这个数据需要跨多个不相关的组件共享吗？** 不需要的话放在组件内部或者用 props 传递。
+
+**列表渲染加稳定的 key**
+
+```tsx
+// ❌ 用 index 做 key，列表重排序时 React 会重新渲染所有项
+{list.map((item, index) => <Card key={index} item={item} />)}
+
+// ✅ 用唯一 ID，只更新真正变化的项
+{list.map(item => <Card key={item.id} item={item} />)}
+```
+
+**动画用 transform，不用 top/left**
+
+```css
+/* ❌ 触发 layout + paint，性能差 */
+.box { top: 100px; }
+
+/* ✅ 只触发 composite，GPU 加速 */
+.box { transform: translateY(100px); }
+```
+
+位置动画、位移效果优先用 `transform`，透明度用 `opacity`，这两个属性不会触发重排重绘，动画更流畅。

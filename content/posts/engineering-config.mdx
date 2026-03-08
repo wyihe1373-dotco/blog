@@ -1,0 +1,161 @@
+---
+title: "前端工程化配置备忘录"
+description: "ESLint、Prettier、TypeScript、Vite——每次搭新项目都要查一遍，干脆记下来"
+date: "2025-09-10"
+tags: ["工程化", "ESLint", "TypeScript", "Vite"]
+---
+
+## 为什么要记这个
+
+每次搭新项目，这些配置我都要重新查一遍。不是因为不会，是因为每个工具的配置项太多，记不住细节。这篇就是给自己留个可以直接抄的备忘录。
+
+---
+
+## TypeScript 基础配置
+
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,           // 开严格模式，别关
+    "jsx": "react-jsx",       // React 17+ 不需要手动 import React
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]        // 路径别名
+    },
+    "noUnusedLocals": true,   // 未使用的变量报错，保持代码干净
+    "skipLibCheck": true      // 跳过 node_modules 类型检查，加快编译
+  }
+}
+```
+
+`strict: true` 这个一定要开，初期有点痛，长期省事很多。
+
+---
+
+## ESLint 配置（Flat Config）
+
+ESLint v9 开始用 Flat Config，之前的 `.eslintrc` 格式已经废弃了：
+
+```javascript
+// eslint.config.js
+import js from '@eslint/js'
+import tseslint from 'typescript-eslint'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+
+export default tseslint.config(
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    plugins: {
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
+    },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      'react-refresh/only-export-components': 'warn',
+      '@typescript-eslint/no-explicit-any': 'warn',  // any 用了有提示但不报错
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
+  }
+)
+```
+
+---
+
+## Prettier 配置
+
+```json
+// .prettierrc
+{
+  "semi": false,          // 不加分号（个人习惯）
+  "singleQuote": true,    // 单引号
+  "tabWidth": 2,
+  "trailingComma": "es5", // 数组/对象最后一项后面加逗号
+  "printWidth": 100
+}
+```
+
+ESLint 和 Prettier 一起用，要装 `eslint-config-prettier` 来关掉 ESLint 里和格式相关的规则，不然两边会打架。
+
+---
+
+## Vite 配置常用部分
+
+```typescript
+// vite.config.ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import path from 'path'
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: { '@': path.resolve(__dirname, 'src') },
+  },
+  server: {
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://dev.example.com',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api/, ''),
+      },
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // 按模块分包，避免单文件太大
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          utils: ['lodash-es', 'dayjs'],
+        },
+      },
+    },
+  },
+})
+```
+
+---
+
+## package.json scripts
+
+```json
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "type-check": "tsc --noEmit"
+  }
+}
+```
+
+`tsc -b && vite build` 这样先过类型检查再打包，CI 里能提前发现类型问题。
+
+---
+
+## Git Hooks（用 simple-git-hooks + lint-staged）
+
+不用 husky 是因为 simple-git-hooks 更轻，配置直接写在 package.json：
+
+```json
+{
+  "simple-git-hooks": {
+    "pre-commit": "npx lint-staged"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": ["eslint --fix", "prettier --write"],
+    "*.{json,md,css}": "prettier --write"
+  }
+}
+```
+
+装完跑一次 `npx simple-git-hooks` 激活，之后每次 commit 前自动格式化。

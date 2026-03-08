@@ -1,0 +1,236 @@
+---
+title: "Vue3 组合式函数：常用 Composables 整理"
+description: "Vue3 的 Composition API 最大的价值是逻辑复用。这篇整理了几个项目里真正常用的 composable 写法"
+date: "2025-06-28"
+tags: ["Vue3", "学习笔记", "Composition API"]
+---
+
+## 什么是 Composable
+
+Composable 是 Vue3 里复用有状态逻辑的方式，就是一个以 `use` 开头的函数，里面用 Composition API 写逻辑：
+
+```typescript
+// 直接对比
+// Vue2 mixin — 逻辑来源不清晰，命名冲突
+export default {
+  mixins: [useMouseMixin],
+  mounted() {
+    // this.x 从哪来的？不知道
+  }
+}
+
+// Vue3 composable — 明确来源，解构出来就用
+const { x, y } = useMouse()
+```
+
+---
+
+## ref vs reactive
+
+Composition API 最基础的两个响应式 API，先搞清楚区别：
+
+```typescript
+// ref：包一层，访问要加 .value
+const count = ref(0)
+count.value++
+// 模板里不用加 .value（Vue 自动解包）
+
+// reactive：对象直接响应式，不加 .value
+const state = reactive({ count: 0, name: '张三' })
+state.count++
+
+// reactive 不能解构！解构出来失去响应性
+const { count } = reactive({ count: 0 }) // ❌ count 不再响应式
+
+// 要解构用 toRefs
+const state = reactive({ count: 0 })
+const { count } = toRefs(state) // ✅ count.value 是响应式的
+```
+
+经验：**优先用 `ref`**，统一用 `.value` 访问，比 `reactive` 少踩坑。
+
+---
+
+## computed 和 watch
+
+```typescript
+const firstName = ref('张')
+const lastName = ref('三')
+
+// computed：派生值，依赖变化自动更新
+const fullName = computed(() => firstName.value + lastName.value)
+
+// watch：监听变化执行副作用
+watch(count, (newVal, oldVal) => {
+  console.log(`从 ${oldVal} 变成了 ${newVal}`)
+})
+
+// 监听多个
+watch([firstName, lastName], ([newFirst, newLast]) => {
+  console.log('名字变了', newFirst, newLast)
+})
+
+// 深度监听对象
+watch(
+  () => user.profile,
+  (newProfile) => { ... },
+  { deep: true }
+)
+
+// watchEffect：自动收集依赖，立即执行
+watchEffect(() => {
+  // 用到了哪些响应式数据，就自动监听哪些
+  document.title = `${count.value} 条消息`
+})
+```
+
+---
+
+## 常用 Composable
+
+### useToggle
+
+```typescript
+function useToggle(initialValue = false) {
+  const value = ref(initialValue)
+  const toggle = () => { value.value = !value.value }
+  const setTrue  = () => { value.value = true }
+  const setFalse = () => { value.value = false }
+  return { value, toggle, setTrue, setFalse }
+}
+
+// 用的时候
+const { value: visible, setTrue: openDialog, setFalse: closeDialog } = useToggle()
+```
+
+---
+
+### useLocalStorage
+
+```typescript
+function useLocalStorage<T>(key: string, defaultValue: T) {
+  const stored = localStorage.getItem(key)
+  const initial = stored ? JSON.parse(stored) : defaultValue
+
+  const data = ref<T>(initial)
+
+  watch(data, (val) => {
+    localStorage.setItem(key, JSON.stringify(val))
+  }, { deep: true })
+
+  return data
+}
+
+// 用的时候
+const theme = useLocalStorage('theme', 'dark')
+theme.value = 'light'  // 自动存到 localStorage
+```
+
+---
+
+### useEventListener
+
+避免手动 add/remove，组件卸载自动清理：
+
+```typescript
+function useEventListener(
+  target: EventTarget | Ref<EventTarget | null>,
+  event: string,
+  handler: EventListener
+) {
+  onMounted(() => {
+    const el = isRef(target) ? target.value : target
+    el?.addEventListener(event, handler)
+  })
+  onUnmounted(() => {
+    const el = isRef(target) ? target.value : target
+    el?.removeEventListener(event, handler)
+  })
+}
+
+// 用的时候
+useEventListener(window, 'resize', handleResize)
+useEventListener(document, 'keydown', handleKeydown)
+```
+
+---
+
+### useDebounce / useThrottle
+
+```typescript
+import { ref, watch } from 'vue'
+
+function useDebounce<T>(value: Ref<T>, delay = 300) {
+  const debouncedValue = ref<T>(value.value) as Ref<T>
+  let timer: ReturnType<typeof setTimeout>
+
+  watch(value, (newVal) => {
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      debouncedValue.value = newVal
+    }, delay)
+  })
+
+  return debouncedValue
+}
+
+// 搜索框防抖
+const keyword = ref('')
+const debouncedKeyword = useDebounce(keyword, 400)
+
+watch(debouncedKeyword, (val) => {
+  // 用户停止输入 400ms 后才触发搜索
+  fetchResults(val)
+})
+```
+
+---
+
+### useFetch
+
+```typescript
+function useFetch<T>(url: string | Ref<string>) {
+  const data = ref<T | null>(null)
+  const loading = ref(false)
+  const error = ref<Error | null>(null)
+
+  async function fetch() {
+    loading.value = true
+    error.value = null
+    try {
+      const res = await window.fetch(isRef(url) ? url.value : url)
+      data.value = await res.json()
+    } catch (e) {
+      error.value = e as Error
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // url 变化时重新请求
+  watch(isRef(url) ? url : () => url, fetch, { immediate: true })
+
+  return { data, loading, error, refetch: fetch }
+}
+
+// 用的时候
+const { data, loading } = useFetch<User[]>('/api/users')
+const userId = ref(1)
+const { data: user } = useFetch(computed(() => `/api/user/${userId.value}`))
+// userId 变化时自动重新请求
+```
+
+---
+
+## 和 React Hooks 对比
+
+| | Vue Composable | React Hook |
+|---|---|---|
+| 响应式 | `ref`/`reactive` | `useState`/`useReducer` |
+| 副作用 | `watchEffect`/`watch` | `useEffect` |
+| 计算值 | `computed` | `useMemo` |
+| DOM 引用 | `ref` + `onMounted` | `useRef` |
+| 生命周期 | `onMounted`/`onUnmounted` | `useEffect` 返回清理函数 |
+| 跨层传值 | `provide`/`inject` | `useContext` |
+
+最大的差异：Vue 的响应式是**自动追踪**的，computed 和 watchEffect 不需要手动声明依赖；React 的 `useMemo` 和 `useEffect` 需要手动写依赖数组。Vue 少了一类常见的 bug（漏写依赖），但也失去了对依赖的精确控制。

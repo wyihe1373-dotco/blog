@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 
-const roles = ['前端开发工程师 · 6 年', 'Vue / React', 'Three.js · WebGL', 'H5 混合开发']
+const roles = ['前端开发工程师 · 6 年', 'Vue / React', 'Echarts', 'H5 Web 混合开发']
 
 export default function Typewriter() {
   const [display, setDisplay] = useState('')
@@ -32,7 +32,7 @@ export default function Typewriter() {
   return (
     <span className="text-accent font-mono">
       {display}
-      <span className="animate-pulse">|</span>
+     
     </span>
   )
 }

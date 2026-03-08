@@ -1,9 +1,11 @@
+import dynamic from 'next/dynamic'
 import Navigation from '@/components/Navigation'
 import Hero from '@/components/Hero'
-import Stats from '@/components/Stats'
-import Projects from '@/components/Projects'
-import Blog from '@/components/Blog'
-import Contact from '@/components/Contact'
+
+const Stats    = dynamic(() => import('@/components/Stats'))
+const Projects = dynamic(() => import('@/components/Projects'))
+const Blog     = dynamic(() => import('@/components/Blog'))
+const Contact  = dynamic(() => import('@/components/Contact'))
 
 export default function Home() {
   return (

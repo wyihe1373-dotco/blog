@@ -184,31 +184,46 @@ body {
 }
 
 /* Code blocks */
-.post-body pre {
-  background: rgba(15, 15, 30, 0.8);
+/* Wrapper: provides border-radius + clips the bar to full visible width */
+.post-body .code-block {
+  position: relative;
+  margin: 1.25rem 0;
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 0.75rem;
+  overflow: hidden;
+}
+/* Top gradient bar lives on the wrapper, not inside the scrollable pre —
+   so it always spans 100% of the visible width regardless of scroll position */
+.post-body .code-block::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(to right, #6366f1, #22d3ee);
+  z-index: 1;
+  pointer-events: none;
+}
+.post-body pre {
+  background: rgba(15, 15, 30, 0.8);
+  border: none;
+  border-radius: 0;
   padding: 1rem 1.25rem;
   overflow-x: auto;
-  margin: 1.25rem 0;
+  margin: 0;
   font-size: 0.8125rem;
   scrollbar-width: none;
   -ms-overflow-style: none;
   line-height: 1.65;
-  position: relative;
 }
 .post-body pre::-webkit-scrollbar {
   display: none;
 }
-.post-body pre::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(to right, #6366f1, #22d3ee);
-  border-radius: 0.75rem 0.75rem 0 0;
+/* Desktop: wrap long lines instead of horizontal scroll */
+@media (min-width: 640px) {
+  .post-body pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
 }
 .post-body code {
   font-family: var(--font-mono, monospace);
