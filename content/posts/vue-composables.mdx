@@ -7,7 +7,7 @@ tags: ["Vue3", "学习笔记", "Composition API"]
 
 ## 什么是 Composable
 
-Composable 是 Vue3 里复用有状态逻辑的方式，就是一个以 `use` 开头的函数，里面用 Composition API 写逻辑：
+Vue2 时代用 mixin 共享逻辑，踩了很多坑——来源不清晰、命名冲突、逻辑散在各处。Vue3 的 composable 解决了这些问题，写法也更直观。就是一个以 `use` 开头的函数，里面用 Composition API 写逻辑：
 
 ```typescript
 // 直接对比

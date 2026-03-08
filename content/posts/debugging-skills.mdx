@@ -1,0 +1,207 @@
+---
+title: "前端问题定位：开发期和线上的排查手段"
+description: "整理一下我日常排查问题用的那些工具和思路，开发期和线上场景不一样，分开记"
+date: "2025-08-18"
+tags: ["经典问题", "调试", "性能优化"]
+---
+
+## 开发期排查
+
+### console 的正确用法
+
+`console.log` 人人会用，但用法差别很大：
+
+```javascript
+// 打印对象时，log 是引用，展开时已经是修改后的值
+const obj = { count: 0 }
+console.log(obj)       // ❌ 展开看到的是修改后的状态
+console.log({ ...obj }) // ✅ 展开快照，打印时的值
+
+// 带标签，多个 log 不会混
+console.log('[请求参数]', params)
+console.log('[响应数据]', res)
+
+// 打印表格，对象数组一目了然
+console.table(list)
+
+// 计时
+console.time('fetch')
+await fetchData()
+console.timeEnd('fetch')  // fetch: 234ms
+
+// 分组，嵌套逻辑清晰
+console.group('用户模块')
+console.log('登录状态', isLogin)
+console.log('用户信息', user)
+console.groupEnd()
+```
+
+### debugger + 断点
+
+比 `console.log` 更强的工具，可以暂停执行、逐步走、查看调用栈。
+
+**直接在代码里写：**
+
+```javascript
+function processData(data) {
+  debugger  // 执行到这里会暂停，DevTools 自动打开断点
+  return data.map(transform)
+}
+```
+
+**DevTools 里打断点：**
+- Sources 面板 → 找到文件 → 点行号 → 刷新
+- 条件断点：右键行号 → Add conditional breakpoint，只在特定条件下暂停（比如 `i === 99`，不用一直 F8）
+
+**事件断点：**
+- Sources → Event Listener Breakpoints → 勾选 click / XHR 等
+- 触发事件时自动暂停，直接定位到处理函数，不用自己找
+
+### 网络请求排查
+
+DevTools → Network：
+
+- **看请求是否发出**：有时候代码写了但请求没发，可能是条件判断问题
+- **看请求参数**：Request Payload 里看实际发出的参数，和预期是否一致
+- **看响应数据**：Response 里看接口实际返回什么
+- **看状态码**：
+  - `401` — 未登录或 token 过期
+  - `403` — 没有权限
+  - `404` — 接口路径错了
+  - `500` — 服务端报错，找后端
+  - `CORS error` — 跨域问题，通常是接口没配 Access-Control-Allow-Origin
+
+**XHR 断点：** Sources → XHR/fetch Breakpoints → 填 URL 关键词，发出该请求时自动暂停，可以看是哪里发的请求。
+
+### Vue / React DevTools
+
+**React DevTools：**
+- Components 面板：看组件树、props、state 当前值，可以直接修改 state 调试
+- Profiler 面板：录制一段操作，看哪些组件重渲染了、每次渲染耗时多少
+
+**Vue DevTools：**
+- Components：同上，看组件状态
+- Pinia/Vuex：看 store 的状态变化历史，可以时间旅行回放
+
+发现某个值不对，先在 DevTools 里确认是哪一层的问题（props 传进来的就对，说明渲染没问题；传进来的就不对，往上查）。
+
+### 移动端调试
+
+**iOS Safari：**
+Mac → Safari → 开发 → 连接的设备，可以用桌面 Safari DevTools 调试 iOS WebView。
+
+**Android Chrome：**
+`chrome://inspect` → 找到设备和页面，完整的 DevTools 远程调试。
+
+**Vconsole（H5 内嵌）：**
+
+```javascript
+import VConsole from 'vconsole'
+if (process.env.NODE_ENV !== 'production') {
+  new VConsole()
+}
+```
+
+在手机上显示一个悬浮面板，可以看 console、网络请求、存储。App 内嵌 H5 没法用桌面 DevTools 时，这个很有用。
+
+---
+
+## 线上排查
+
+### 错误监控（Sentry）
+
+线上问题不可能每次都能复现，必须有错误上报。Sentry 是最常用的方案：
+
+```javascript
+import * as Sentry from '@sentry/browser'
+
+Sentry.init({
+  dsn: 'your-dsn',
+  environment: 'production',
+})
+
+// 手动上报
+try {
+  riskyOperation()
+} catch (e) {
+  Sentry.captureException(e)
+}
+```
+
+Sentry 能看到：错误信息、发生次数、影响用户数、完整调用栈（配了 sourcemap 可以看原始代码行号）、用户操作路径（Breadcrumbs）。
+
+**sourcemap 很关键**。打包后的代码是压缩的，没有 sourcemap 只能看到 `bundle.js:1:12345`，毫无意义。构建时生成 sourcemap 上传到 Sentry，线上报错就能映射回原始代码。
+
+### sourcemap 定位
+
+没有接监控系统时，手动还原报错位置：
+
+1. 拿到报错信息里的文件名和行列号（比如 `main.abc123.js:1:8942`）
+2. 去 CDN 或服务器拿对应的 `.map` 文件
+3. 用 `source-map` 库还原：
+
+```javascript
+const { SourceMapConsumer } = require('source-map')
+const rawSourceMap = JSON.parse(fs.readFileSync('main.abc123.js.map'))
+
+SourceMapConsumer.with(rawSourceMap, null, consumer => {
+  const pos = consumer.originalPositionFor({ line: 1, column: 8942 })
+  console.log(pos)
+  // { source: 'src/components/Foo.tsx', line: 42, column: 8, name: 'handleClick' }
+})
+```
+
+### 线上 Performance 分析
+
+**Lighthouse：** DevTools → Lighthouse，跑一次得到 FCP/LCP/TBT/CLS 等指标评分，每个问题都有具体的优化建议。
+
+**web-vitals 线上埋点：**
+
+```javascript
+import { getCLS, getFID, getLCP, getFCP, getTTFB } from 'web-vitals'
+
+function reportToAnalytics(metric) {
+  // 上报到你的监控系统
+  fetch('/api/metrics', {
+    method: 'POST',
+    body: JSON.stringify(metric),
+  })
+}
+
+getCLS(reportToAnalytics)
+getLCP(reportToAnalytics)
+getFCP(reportToAnalytics)
+getTTFB(reportToAnalytics)
+```
+
+Lighthouse 是实验室数据（你自己跑的），web-vitals 是真实用户数据，两个都有才全面。真实用户的网络环境、设备性能差很多，线上数据更有参考价值。
+
+### 网络请求抓包（代理）
+
+线上接口出问题，或者需要看 App 内嵌 H5 的真实请求，用抓包工具：
+
+- **Charles / Proxyman（Mac）**：设置手机走代理，可以看所有 HTTP/HTTPS 请求，还能改请求/响应数据（mock）
+- **Whistle**：Node.js 实现，跨平台，规则配置灵活
+
+```bash
+# Whistle
+npm install -g whistle
+w2 start
+# 访问 http://127.0.0.1:8899 配置规则
+```
+
+可以把线上接口代理到本地，快速验证接口问题是前端还是后端。
+
+---
+
+## 一个排查思路
+
+遇到问题时，不要上来就改代码，先定位：
+
+1. **确认问题**：是必现还是偶现？哪些用户/设备/网络？
+2. **看报错**：控制台有没有错误信息？监控系统有没有上报？
+3. **看数据**：接口返回的数据对不对？参数发出去对不对？
+4. **缩小范围**：二分法注释掉一半代码，确认问题在哪个模块
+5. **复现**：能本地复现最好，不能复现的 bug 很难修
+
+**80% 的问题通过「看报错 + 看网络请求」就能定位**，不需要打很多断点。剩下的 20% 才需要深入调试。

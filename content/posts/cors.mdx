@@ -1,0 +1,202 @@
+---
+title: "跨域：为什么会有，怎么解决，开发和线上的处理不一样"
+description: "跨域问题几乎每个项目都会遇到，开发环境和线上的处理方式也不一样。记录一下原理和我常用的几种解法"
+date: "2025-08-19"
+tags: ["经典问题", "浏览器", "安全"]
+---
+
+## 为什么会有跨域限制
+
+跨域报错是我刚开始做前端时最频繁遇到的问题之一，当时只知道「找后端加一下」，也不清楚为什么要有这个限制。后来搞清楚了同源策略的原因，解决起来就清晰多了。
+
+浏览器有一个**同源策略**（Same-Origin Policy）：一个页面的脚本只能读取同源的资源，不同源的请求会被浏览器拦截。
+
+「同源」的定义：**协议 + 域名 + 端口**完全一致。
+
+```
+https://example.com/page     ← 基准
+
+https://example.com/api      ✅ 同源（只是路径不同）
+http://example.com/api       ❌ 协议不同
+https://api.example.com      ❌ 子域名不同
+https://example.com:8080     ❌ 端口不同
+https://other.com            ❌ 域名不同
+```
+
+**它保护的是什么？** 防止恶意网站用你的浏览器身份（Cookie、Token）去访问其他网站的接口。比如你登着银行网站，恶意页面不能偷偷用你的 Cookie 向银行接口发请求。
+
+---
+
+## 什么会触发跨域，什么不会
+
+**会触发：**
+- `fetch` / `XMLHttpRequest` 跨域请求
+- 跨域的 `new WebSocket()`
+
+**不会触发（浏览器允许跨域加载）：**
+- `<img src="...">`
+- `<script src="...">`
+- `<link href="...">`
+- `<form>` 表单提交（能发出去，但不能用 JS 读响应）
+
+这就是为什么 CDN 的图片、第三方 JS 库可以正常加载，但跨域的 fetch 请求会被拦截。
+
+---
+
+## CORS：标准的跨域解决方案
+
+CORS（Cross-Origin Resource Sharing）是浏览器和服务器协商的机制：服务器在响应头里声明「我允许哪些来源访问」，浏览器看到这个声明就放行。
+
+**简单请求（GET/POST + 普通请求头）：** 直接发，服务器在响应头里加：
+
+```
+Access-Control-Allow-Origin: https://your-site.com
+```
+
+或者允许所有来源（不推荐在生产用）：
+
+```
+Access-Control-Allow-Origin: *
+```
+
+注意：`*` 不能和 `credentials`（Cookie）一起用，携带 Cookie 的请求必须指定具体域名。
+
+**非简单请求（PUT/DELETE/自定义请求头）：** 浏览器先发一个 `OPTIONS` 预检请求（Preflight），确认服务器允许后才发真正的请求。服务器需要处理这个 OPTIONS 请求并返回正确的头：
+
+```
+Access-Control-Allow-Origin: https://your-site.com
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE
+Access-Control-Allow-Headers: Content-Type, Authorization
+Access-Control-Max-Age: 86400   // 预检结果缓存 24 小时，避免每次都 OPTIONS
+```
+
+**CORS 是后端配置的，前端改不了。** 遇到跨域问题，先确认是不是服务端没有返回正确的 CORS 头。DevTools → Network → 看响应头里有没有 `Access-Control-Allow-Origin`。
+
+---
+
+## 开发环境：代理解决
+
+本地开发时，前端跑在 `localhost:3000`，接口在 `api.example.com`，域名不同，必然跨域。
+
+让后端配 CORS 允许 localhost 是可以的，但通常用**开发代理**更方便——把请求发给本地的开发服务器，由它转发给真实接口。浏览器看到的是同源请求，跨域问题自然消失。
+
+**Vite：**
+
+```typescript
+// vite.config.ts
+export default {
+  server: {
+    proxy: {
+      '/api': {
+        target: 'https://api.example.com',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api/, '')
+      }
+    }
+  }
+}
+```
+
+前端请求 `/api/user` → Vite 代理转发到 `https://api.example.com/user`。
+
+**Next.js：**
+
+```typescript
+// next.config.ts
+module.exports = {
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'https://api.example.com/:path*',
+      },
+    ]
+  },
+}
+```
+
+---
+
+## 线上环境：Nginx 反向代理
+
+生产环境通常用 Nginx 统一处理，前后端部署在同一域名下，天然同源：
+
+```nginx
+server {
+  listen 80;
+  server_name example.com;
+
+  # 前端静态资源
+  location / {
+    root /var/www/dist;
+    try_files $uri $uri/ /index.html;
+  }
+
+  # 接口代理，/api 前缀转发给后端
+  location /api/ {
+    proxy_pass http://backend:8080/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+  }
+}
+```
+
+前端访问 `example.com/api/user`，Nginx 把请求代理到后端服务，浏览器全程都是同域请求，完全不涉及跨域。
+
+---
+
+## 带 Cookie 的跨域请求
+
+有时候接口在不同子域（比如前端 `app.example.com`，接口 `api.example.com`），需要携带 Cookie：
+
+**前端需要加 `credentials`：**
+
+```javascript
+fetch('https://api.example.com/user', {
+  credentials: 'include'  // 携带 Cookie
+})
+
+// axios
+axios.defaults.withCredentials = true
+```
+
+**服务端必须明确指定域名（不能用 `*`）：**
+
+```
+Access-Control-Allow-Origin: https://app.example.com
+Access-Control-Allow-Credentials: true
+```
+
+两边都要配，缺一不可。
+
+---
+
+## 常见报错和对应原因
+
+```
+Access to fetch at 'xxx' from origin 'yyy' has been blocked by CORS policy:
+No 'Access-Control-Allow-Origin' header is present
+```
+→ 服务端没有返回 CORS 头，找后端配
+
+```
+...has been blocked by CORS policy: The value of the 'Access-Control-Allow-Origin'
+header in the response must not be the wildcard '*' when the request's credentials
+mode is 'include'
+```
+→ 前端用了 `credentials: 'include'`，但后端 `Access-Control-Allow-Origin` 用的是 `*`，改成具体域名
+
+```
+CORS preflight channel did not succeed
+```
+→ OPTIONS 预检请求没有正确响应，后端没有处理 OPTIONS 方法
+
+---
+
+## 几个常见误区
+
+**"前端能解决跨域"** — 不能。CORS 是服务端配的，前端唯一能做的是用代理把跨域变成同域。
+
+**"跨域请求没发出去"** — 不对。请求是发出去了，服务器也处理了，是浏览器在收到响应后拦截了它，不让 JS 读取。所以跨域的接口如果有副作用（比如 DELETE 操作），即使 JS 拿不到响应，操作可能已经执行了。
+
+**"所有跨域都要预检"** — 不是。简单请求（GET、POST + 普通请求头）直接发，不走预检。预检是因为非简单请求"有破坏性"，浏览器先问一句再发。

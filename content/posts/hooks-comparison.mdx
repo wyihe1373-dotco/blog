@@ -1,0 +1,244 @@
+---
+title: "Vue3 和 React 常用钩子对照：作用和用法"
+description: "两个框架的钩子放在一起对比，比单独学更容易记住——同一个需求，Vue3 用什么、React 用什么，差异一目了然"
+date: "2025-08-20"
+tags: ["学习笔记", "Vue3", "React"]
+---
+
+两个框架都用了一段时间之后，发现最容易混的不是 API 名字，而是「这个需求我该用哪个钩子」。放在一起对比着记，效果比单独背要好很多。
+
+---
+
+## 状态管理
+
+**React：`useState`**
+
+```tsx
+const [count, setCount] = useState(0)
+const [user, setUser] = useState<User | null>(null)
+
+// 更新
+setCount(count + 1)
+setCount(prev => prev + 1)  // 函数式更新，推荐
+```
+
+**Vue3：`ref` / `reactive`**
+
+```typescript
+const count = ref(0)
+count.value++
+
+const user = reactive({ name: '', age: 0 })
+user.name = '张三'  // 直接修改，不需要 setter
+```
+
+差异：React 的 state 是不可变的，必须用 setter 更新；Vue3 的响应式数据可以直接修改。
+
+---
+
+## 派生状态 / 计算值
+
+**React：`useMemo`**
+
+```tsx
+const total = useMemo(() => {
+  return list.reduce((sum, item) => sum + item.price, 0)
+}, [list])  // list 不变就用缓存值
+```
+
+**Vue3：`computed`**
+
+```typescript
+const total = computed(() => {
+  return list.value.reduce((sum, item) => sum + item.price, 0)
+  // 自动追踪依赖，不需要手动声明
+})
+```
+
+差异：React 需要手动声明依赖数组；Vue3 自动追踪，用到哪些响应式数据就依赖哪些。
+
+---
+
+## 副作用
+
+**React：`useEffect`**
+
+```tsx
+// 组件挂载后执行
+useEffect(() => {
+  fetchData()
+}, [])
+
+// 依赖变化时执行
+useEffect(() => {
+  document.title = `${count} 条消息`
+}, [count])
+
+// 返回清理函数
+useEffect(() => {
+  window.addEventListener('resize', handleResize)
+  return () => window.removeEventListener('resize', handleResize)
+}, [])
+```
+
+**Vue3：`onMounted` + `watch` / `watchEffect`**
+
+```typescript
+// 挂载后执行
+onMounted(() => {
+  fetchData()
+})
+
+// 监听特定值变化
+watch(count, (newVal, oldVal) => {
+  document.title = `${newVal} 条消息`
+})
+
+// 自动追踪依赖（类似 React useEffect 无依赖数组的写法）
+watchEffect(() => {
+  document.title = `${count.value} 条消息`
+})
+
+// 清理副作用
+watchEffect((onCleanup) => {
+  const timer = setInterval(tick, 1000)
+  onCleanup(() => clearInterval(timer))
+})
+```
+
+差异：React 用一个 `useEffect` 覆盖所有副作用场景；Vue3 把挂载（`onMounted`）和监听（`watch`）拆开，更清晰，但要多记几个 API。
+
+---
+
+## DOM 引用
+
+**React：`useRef`**
+
+```tsx
+const inputRef = useRef<HTMLInputElement>(null)
+
+useEffect(() => {
+  inputRef.current?.focus()
+}, [])
+
+return <input ref={inputRef} />
+```
+
+`useRef` 还有另一个用途：存一个不触发重渲染的可变值（比如定时器 ID、上一次的值）：
+
+```tsx
+const timerRef = useRef<ReturnType<typeof setInterval>>()
+timerRef.current = setInterval(tick, 1000)  // 修改不触发重渲染
+```
+
+**Vue3：`ref` + `onMounted`**
+
+```typescript
+const inputRef = ref<HTMLInputElement | null>(null)
+
+onMounted(() => {
+  inputRef.value?.focus()
+})
+```
+
+```html
+<input ref="inputRef" />
+```
+
+---
+
+## 稳定回调
+
+**React：`useCallback`**
+
+```tsx
+// ❌ 每次父组件渲染都生成新函数，子组件 memo 失效
+const handleClick = () => doSomething(id)
+
+// ✅ id 不变时函数引用稳定
+const handleClick = useCallback(() => {
+  doSomething(id)
+}, [id])
+```
+
+**Vue3：** 不需要。Vue3 的响应式系统不依赖引用比较，方法直接定义就行：
+
+```typescript
+const handleClick = () => {
+  doSomething(id.value)
+}
+```
+
+---
+
+## 生命周期
+
+**React：用 `useEffect` 模拟**
+
+```tsx
+// 挂载
+useEffect(() => { console.log('mounted') }, [])
+
+// 更新（每次渲染后）
+useEffect(() => { console.log('updated') })
+
+// 卸载
+useEffect(() => {
+  return () => { console.log('unmounted') }
+}, [])
+```
+
+**Vue3：独立的生命周期钩子**
+
+```typescript
+onMounted(() => { console.log('mounted') })
+onUpdated(() => { console.log('updated') })
+onUnmounted(() => { console.log('unmounted') })
+onBeforeMount(() => { /* DOM 挂载前 */ })
+onBeforeUnmount(() => { /* 卸载前，适合清理 */ })
+```
+
+---
+
+## 跨层传值
+
+**React：`useContext`**
+
+```tsx
+// 创建 context
+const ThemeContext = createContext('light')
+
+// 提供
+<ThemeContext.Provider value="dark">
+  <App />
+</ThemeContext.Provider>
+
+// 消费
+const theme = useContext(ThemeContext)
+```
+
+**Vue3：`provide` / `inject`**
+
+```typescript
+// 父组件提供
+provide('theme', 'dark')
+
+// 子/孙组件注入
+const theme = inject('theme', 'light')  // 第二个参数是默认值
+```
+
+---
+
+## 快速对照表
+
+| 需求 | React | Vue3 |
+|---|---|---|
+| 状态 | `useState` | `ref` / `reactive` |
+| 计算值 | `useMemo` | `computed` |
+| 副作用 | `useEffect` | `watchEffect` / `watch` |
+| 挂载后执行 | `useEffect(() => {}, [])` | `onMounted` |
+| 卸载清理 | `useEffect` return 函数 | `onUnmounted` / `onBeforeUnmount` |
+| DOM 引用 | `useRef` | `ref` + 模板 ref |
+| 稳定回调 | `useCallback` | 直接定义（不需要） |
+| 跨层传值 | `useContext` | `provide` / `inject` |
+| 不触发渲染的可变值 | `useRef` | `ref`（但会触发）/ 普通变量 |

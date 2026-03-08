@@ -13,12 +13,20 @@ const CATEGORIES = [
   { label: '组件封装', tags: ['组件封装', '全局调用', '设计思路'] },
   { label: '工程化', tags: ['工程化', 'TypeScript', 'Vite', 'Monorepo', 'AI', '代码生成', 'CI/CD'] },
   { label: '业务实践', tags: ['前端工程', '性能优化', '安全', '微信支付', 'H5', 'Canvas'] },
+  { label: '经典问题', tags: ['经典问题', '浏览器', '闭包', '内存'] },
 ]
 
 export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
   const ref = useRef<HTMLDivElement>(null)
   const inView = useInView(ref, { once: true, margin: '-80px 0px' })
-  const [active, setActive] = useState('全部')
+  const [active, setActive] = useState(() =>
+    typeof window !== 'undefined' ? (sessionStorage.getItem('blog-tab') ?? '全部') : '全部'
+  )
+
+  const handleTabChange = (label: string) => {
+    setActive(label)
+    sessionStorage.setItem('blog-tab', label)
+  }
 
   const filtered = active === '全部'
     ? posts
@@ -31,7 +39,7 @@ export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
         {CATEGORIES.map(cat => (
           <button
             key={cat.label}
-            onClick={() => setActive(cat.label)}
+            onClick={() => handleTabChange(cat.label)}
             className={`relative px-4 py-1.5 rounded-full text-sm font-mono transition-colors duration-200 cursor-pointer border ${
               active === cat.label
                 ? 'text-white border-transparent'

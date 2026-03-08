@@ -1,0 +1,192 @@
+---
+title: "循环引用：怎么产生、怎么排查、怎么避免"
+description: "踩过 JSON.stringify 报错、深拷贝栈溢出、事件监听导致内存泄漏，最后发现根子都在循环引用上——记录一下怎么排查和避免"
+date: "2025-08-15"
+tags: ["经典问题", "内存", "JavaScript"]
+---
+
+## 什么是循环引用
+
+第一次遇到 `TypeError: Converting circular structure to JSON` 的时候，花了挺长时间才搞清楚是什么问题。循环引用不像空指针那样立刻报错，很多时候是悄悄导致内存泄漏或者遍历死循环，难发现。
+
+简单说：对象 A 持有对象 B 的引用，对象 B 又持有对象 A 的引用，就形成了循环引用。
+
+```javascript
+const a = {}
+const b = {}
+a.ref = b
+b.ref = a
+
+// a → b → a → b → ...
+```
+
+更常见的是自引用：
+
+```javascript
+const node = { value: 1 }
+node.self = node  // 指向自己
+```
+
+---
+
+## 会引发什么问题
+
+### 1. JSON.stringify 直接报错
+
+```javascript
+const a = {}
+a.self = a
+
+JSON.stringify(a)
+// TypeError: Converting circular structure to JSON
+```
+
+这是最直观的报错。前端开发里，给接口传参或者 `console.log` 打印复杂对象时都可能触发。
+
+### 2. 内存泄漏
+
+JS 引擎用引用计数或可达性分析来判断一个对象是否可以被垃圾回收。
+
+现代 JS 引擎（V8）用的是**可达性分析**：从根对象（window、全局变量）出发，能遍历到的对象就保留，遍历不到的就回收。所以纯粹的循环引用，如果没有外部变量持有，是可以被回收的。
+
+但如果循环引用对象被挂在了全局变量、闭包、或者 DOM 上，就会一直留在内存里：
+
+```javascript
+// ❌ 组件卸载后，listener 里持有 element 引用，element 也持有 listener
+function setup() {
+  const element = document.getElementById('btn')
+  const data = { element }  // data 引用了 element
+
+  element.addEventListener('click', () => {
+    console.log(data)  // listener 引用了 data，data 引用了 element
+  })
+
+  // 如果没有 removeEventListener，即使 element 从 DOM 移除，内存也不会释放
+}
+```
+
+### 3. 递归遍历死循环
+
+自己写了深拷贝、深度比较、树形遍历的函数，遇到循环引用会无限递归，最终栈溢出：
+
+```javascript
+function deepClone(obj) {
+  if (typeof obj !== 'object') return obj
+  const result = {}
+  for (const key in obj) {
+    result[key] = deepClone(obj[key])  // 遇到循环引用会一直递归下去
+  }
+  return result
+}
+
+const a = {}
+a.self = a
+deepClone(a)  // Maximum call stack size exceeded
+```
+
+---
+
+## 怎么排查
+
+### JSON.stringify 报错定位
+
+错误信息会提示 `Converting circular structure to JSON`，但不会告诉你是哪里循环了。可以用这个替代方案临时打印：
+
+```javascript
+function safeStringify(obj) {
+  const seen = new WeakSet()
+  return JSON.stringify(obj, (key, value) => {
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) return '[Circular]'
+      seen.add(value)
+    }
+    return value
+  })
+}
+
+console.log(safeStringify(a))
+// {"self":"[Circular]"}
+```
+
+### Chrome DevTools Memory 面板
+
+怀疑有内存泄漏时：
+
+1. DevTools → Memory → Take heap snapshot
+2. 执行会泄漏的操作（比如打开关闭某个弹窗）
+3. 再 Take heap snapshot
+4. 切换到 Comparison 视图，看两次快照之间增量的对象
+5. 找到持续增长的对象类型，点进去看它的 Retainers（谁持有它）
+
+---
+
+## 怎么解决
+
+### 打断循环链
+
+最直接的方式：找到循环中不必要的那条引用，设为 `null`。
+
+```javascript
+// 不需要 data 引用 element 的话
+const data = { value: 42 }  // 不存 element
+element.addEventListener('click', () => {
+  console.log(data)
+})
+```
+
+### 事件监听及时清理
+
+```javascript
+// Vue3
+onUnmounted(() => {
+  element.removeEventListener('click', handler)
+})
+
+// React
+useEffect(() => {
+  element.addEventListener('click', handler)
+  return () => element.removeEventListener('click', handler)
+}, [])
+```
+
+### WeakRef / WeakMap
+
+如果确实需要持有对象引用，但不想阻止垃圾回收，用 `WeakRef` 或 `WeakMap`：
+
+```javascript
+// WeakMap：key 是弱引用，key 被回收后这条记录自动消失
+const cache = new WeakMap()
+cache.set(element, { data: 'some data' })
+// element 被回收后，cache 里这条记录也会自动清除
+```
+
+### 深拷贝处理循环引用
+
+自己写深拷贝时用 `WeakMap` 记录已访问的对象：
+
+```javascript
+function deepClone(obj, visited = new WeakMap()) {
+  if (typeof obj !== 'object' || obj === null) return obj
+  if (visited.has(obj)) return visited.get(obj)  // 已经克隆过，直接返回
+
+  const result = Array.isArray(obj) ? [] : {}
+  visited.set(obj, result)  // 先记录，再递归
+
+  for (const key in obj) {
+    result[key] = deepClone(obj[key], visited)
+  }
+  return result
+}
+```
+
+---
+
+## 开发时怎么避免
+
+**不把 DOM 元素存进数据对象。** 数据就是数据，DOM 引用放在组件里管理，用完清理。
+
+**用完的事件监听一定要移除。** 在 Vue 的 `onUnmounted`、React 的 `useEffect` 清理函数里处理，养成习惯。
+
+**树形/图结构遍历加 visited 集合。** 写递归遍历函数时，默认就加上访问记录，不要假设数据一定没有循环。
+
+**用成熟库做深拷贝。** `lodash.cloneDeep` 已经处理了循环引用，不要自己手写一个有问题的版本。
