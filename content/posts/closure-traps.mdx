@@ -1,0 +1,196 @@
+---
+title: "闭包陷阱：我 debug 过的几个经典 bug"
+description: "闭包本身没问题，问题是以为它捕获的是「当前值」，其实捕获的是「变量本身」——吃过几次亏之后记下来的"
+date: "2025-08-16"
+tags: ["经典问题", "闭包", "JavaScript"]
+---
+
+## 先搞清楚闭包捕获的是什么
+
+闭包捕获的是**变量的引用**，不是变量当时的值。这一句话理解透了，大部分闭包 bug 就能看明白。
+
+```javascript
+let count = 0
+
+const fn = () => {
+  console.log(count)  // 捕获的是 count 这个变量，不是 0 这个值
+}
+
+count = 10
+fn()  // 打印 10，不是 0
+```
+
+---
+
+## 经典陷阱一：循环里的异步
+
+看起来很基础，但实际项目里真的会踩：
+
+```javascript
+// ❌ 打印 5 个 5
+for (var i = 0; i < 5; i++) {
+  setTimeout(() => {
+    console.log(i)
+  }, 1000)
+}
+```
+
+原因：`var` 声明的 `i` 是函数作用域（或全局），循环结束时 `i` 已经是 5，所有 setTimeout 回调共享同一个 `i`，1秒后统一读到 5。
+
+**解法一：改用 `let`**（块级作用域，每次循环独立的 `i`）
+
+```javascript
+// ✅
+for (let i = 0; i < 5; i++) {
+  setTimeout(() => {
+    console.log(i)  // 0 1 2 3 4
+  }, 1000)
+}
+```
+
+**解法二：立即执行函数固定值**
+
+```javascript
+// ✅ 用 IIFE 把当前 i 的值传进去
+for (var i = 0; i < 5; i++) {
+  ;((j) => {
+    setTimeout(() => console.log(j), 1000)
+  })(i)
+}
+```
+
+---
+
+## 经典陷阱二：React hooks 的过期闭包
+
+这个在 React 里非常高频。
+
+```tsx
+// ❌ count 永远是 0
+function Counter() {
+  const [count, setCount] = useState(0)
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      console.log(count)  // 闭包捕获了 count = 0，之后永远是 0
+      setCount(count + 1) // 等价于 setCount(0 + 1)，所以 count 永远是 1
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])  // 依赖数组为空，effect 只运行一次，闭包里的 count 永远是初始值
+}
+```
+
+**解法一：加入依赖数组**（每次 count 变化重新建 effect）
+
+```tsx
+useEffect(() => {
+  const timer = setInterval(() => {
+    setCount(count + 1)
+  }, 1000)
+  return () => clearInterval(timer)
+}, [count])  // count 变了就重建 timer
+```
+
+**解法二：用函数式更新**（不依赖闭包里的值）
+
+```tsx
+// ✅ 推荐：setCount 的函数形式，直接拿最新的 prev
+useEffect(() => {
+  const timer = setInterval(() => {
+    setCount(prev => prev + 1)  // 不读闭包里的 count，直接用上一次的值
+  }, 1000)
+  return () => clearInterval(timer)
+}, [])
+```
+
+**解法三：useRef 保存最新值**
+
+```tsx
+// ✅ 适合需要在 effect 里读取最新值的场景
+const countRef = useRef(count)
+countRef.current = count  // 每次渲染同步最新值
+
+useEffect(() => {
+  const timer = setInterval(() => {
+    console.log(countRef.current)  // 永远是最新的
+  }, 1000)
+  return () => clearInterval(timer)
+}, [])
+```
+
+---
+
+## 经典陷阱三：事件监听里的旧状态
+
+和上面本质相同，但场景更常见：
+
+```tsx
+// ❌
+function App() {
+  const [data, setData] = useState([])
+
+  useEffect(() => {
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        console.log(data)  // 永远是 [] ，闭包捕获了初始值
+      }
+    })
+  }, [])
+}
+```
+
+**解法：用 ref 桥接**
+
+```tsx
+// ✅
+const dataRef = useRef(data)
+dataRef.current = data  // 每次渲染更新 ref
+
+useEffect(() => {
+  const handler = (e) => {
+    if (e.key === 'Enter') {
+      console.log(dataRef.current)  // 永远是最新的
+    }
+  }
+  window.addEventListener('keydown', handler)
+  return () => window.removeEventListener('keydown', handler)
+}, [])
+```
+
+---
+
+## 经典陷阱四：Vue2 里的 this 丢失
+
+```javascript
+// ❌ 箭头函数里的 this 不是 Vue 实例
+export default {
+  data() {
+    return { count: 0 }
+  },
+  mounted() {
+    setTimeout(() => {
+      this.count++  // ✅ 箭头函数继承外层 this，这里是对的
+    }, 1000)
+
+    // 但这样是错的：
+    const fn = function() {
+      console.log(this)  // undefined 或 window
+    }
+    fn()
+  }
+}
+```
+
+Vue2 的方法里如果用了普通函数回调，`this` 会丢失。统一用**箭头函数**就能避免。
+
+---
+
+## 怎么在开发中提前发现
+
+**开 React Hooks 的 exhaustive-deps 规则。** 它会提示你依赖数组少写了什么，本质上就是在帮你发现过期闭包。
+
+**看到 `[]` 空依赖数组就多想一下。** effect 只跑一次，里面用到的状态/props 都是初始值，如果里面有异步或事件，基本都会有过期闭包问题。
+
+**理解「每次渲染是一次新的函数调用」。** React 每次渲染都生成新的函数和闭包，`useEffect` 里的闭包是「这次渲染时」的快照。依赖数组决定「哪次渲染的闭包」被 effect 使用。
+
+**需要在回调里读最新值，优先考虑 ref。** `useState` 的值在闭包里是固定的，`useRef` 的 `.current` 是可变的，可以在任何地方读到最新的。

@@ -1,15 +1,13 @@
 ---
 title: "命令式组件封装：Toast、Loading、Dialog 全局调用"
-description: "不想每个页面都维护一个 visible 状态？命令式调用让你像用 alert() 一样用弹窗和提示"
+description: "项目里 Toast、Loading、Dialog 出现频率很高，每个页面维护一套 visible 状态太烦，整理了命令式调用的封装方案"
 date: "2025-07-12"
 tags: ["组件封装", "Vue3", "React", "全局调用"]
 ---
 
 ## 什么是命令式调用
 
-正常用组件都是声明式的：在模板/JSX 里写 `<Toast visible={show} />`，自己管理 `visible` 状态。
-
-命令式是另一种方式：直接调用一个函数就弹出来，不需要在模板里写任何东西：
+我在项目里发现 Toast、Loading 这类组件用的地方特别多，声明式写法要每个页面维护一个 `visible` 状态，改起来很烦。命令式是另一种思路：直接调用函数，像调 `alert()` 一样：
 
 ```javascript
 // 声明式 — 要在模板里写组件、管理状态
