@@ -13,9 +13,7 @@ export default function PostNav({ title }: { title: string }) {
 
   return (
     <nav
-      className={`fixed top-0 left-0 right-0 z-50 transition-[background-color] duration-300 ${
-        scrolled ? 'bg-background/95' : ''
-      }`}
+      className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm transition-shadow duration-300"
       style={{ boxShadow: scrolled ? '0 1px 0 rgba(255,255,255,0.07)' : 'none' }}
     >
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
