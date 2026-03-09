@@ -1,0 +1,156 @@
+---
+title: "原型链：JS 继承机制的底层逻辑"
+description: "用了很久 class 语法之后，回头看 prototype，才真正搞清楚 JS 的对象模型"
+date: "2025-12-05"
+tags: ["经典问题", "JavaScript"]
+---
+
+写了很长时间 `class` 之后，我以为自己懂继承了。直到有一次排查一个奇怪的 bug——某个方法莫名其妙地出现在了不该有它的对象上——才发现我对 JS 的对象模型理解有断层。顺着这个 bug 把原型链重新梳理了一遍。
+
+## `__proto__`、`prototype`、`constructor` 三者关系
+
+这三个属性放在一起看容易乱，分开理解：
+
+- **`prototype`**：只有函数才有，是一个对象，用来挂载共享方法
+- **`__proto__`**：每个对象都有，指向它的原型（即创建它的构造函数的 `prototype`）
+- **`constructor`**：`prototype` 上的属性，指回构造函数本身
+
+```js
+function Person(name) {
+  this.name = name
+}
+
+Person.prototype.greet = function () {
+  return `Hi, I'm ${this.name}`
+}
+
+const p = new Person('wyh')
+
+console.log(p.__proto__ === Person.prototype)       // true
+console.log(Person.prototype.constructor === Person) // true
+console.log(p.constructor === Person)               // true（通过原型链找到的）
+```
+
+原型链的查找规则：访问 `p.greet` 时，先找 `p` 自身，没有就沿着 `__proto__` 往上找，直到 `null`。
+
+## `new` 做了什么
+
+这个搞清楚了，很多东西就通了。`new Foo()` 做了 4 步：
+
+1. 创建一个空对象 `{}`
+2. 把这个对象的 `__proto__` 指向 `Foo.prototype`
+3. 把 `Foo` 里的 `this` 绑定到这个新对象，执行构造函数
+4. 如果构造函数返回一个对象，就用那个对象；否则返回第 1 步创建的对象
+
+手动模拟一下：
+
+```js
+function myNew(Constructor, ...args) {
+  const obj = Object.create(Constructor.prototype)
+  const result = Constructor.apply(obj, args)
+  return result instanceof Object ? result : obj
+}
+
+function Dog(name) {
+  this.name = name
+}
+Dog.prototype.bark = function() {
+  return `${this.name} says woof`
+}
+
+const d = myNew(Dog, 'Rex')
+console.log(d.bark())                        // 'Rex says woof'
+console.log(d.__proto__ === Dog.prototype)   // true
+console.log(d instanceof Dog)               // true
+```
+
+## `class` 是语法糖
+
+ES6 的 `class` 语法更干净，但底层还是原型：
+
+```js
+class Animal {
+  constructor(name) {
+    this.name = name
+  }
+  speak() {
+    return `${this.name} speaks`
+  }
+}
+
+class Dog extends Animal {
+  speak() {
+    return `${this.name} barks`
+  }
+}
+```
+
+`extends` 做了两件事：子类实例的 `__proto__` 指向父类实例，子类 `prototype` 的 `__proto__` 指向父类 `prototype`。
+
+## 原型链查找过程
+
+```js
+const d = new Dog('Rex')
+
+// 查找 d.speak()
+// 1. d 自身 → 没有
+// 2. Dog.prototype → 有，返回
+
+// 查找 d.toString()
+// 1. d 自身 → 没有
+// 2. Dog.prototype → 没有
+// 3. Animal.prototype → 没有
+// 4. Object.prototype → 有 toString，返回
+// 5. null → 链终点，找不到就是 undefined
+```
+
+用 `hasOwnProperty` 区分自有属性和继承属性：
+
+```js
+console.log(d.hasOwnProperty('name'))  // true（构造函数里赋值的）
+console.log(d.hasOwnProperty('speak')) // false（在原型上）
+```
+
+## 原型污染：我遇到的一个 bug
+
+有次排查发现，项目里所有对象都莫名多了一个 `isAdmin` 属性。追踪下去发现是某个工具函数里有这样的代码：
+
+```js
+function merge(target, source) {
+  for (const key in source) {
+    target[key] = source[key]
+  }
+}
+
+const payload = JSON.parse('{"__proto__": {"isAdmin": true}}')
+merge({}, payload)
+
+// 预期：只是创建了一个空对象，source 里有啥就合并啥
+// 实际：Object.prototype 被污染了
+
+const obj = {}
+console.log(obj.isAdmin)   // 预期：undefined
+                           // 实际：true  ← 从来没给 obj 赋过值，但它有了
+console.log({}.isAdmin)    // true  ← 新建的空对象也一样
+console.log([].isAdmin)    // true  ← 所有对象都受影响
+```
+
+`__proto__` 作为 key 被赋值时，实际上修改了 `Object.prototype`，导致所有对象都有了 `isAdmin`。
+
+**修复方式**：用 `Object.hasOwn(source, key)` 或 `Object.keys()` 替代 `for...in`，后者会遍历原型链上的属性。
+
+```js
+// 安全版本
+function safeMerge(target, source) {
+  for (const key of Object.keys(source)) {  // 只遍历自有属性
+    target[key] = source[key]
+  }
+}
+
+safeMerge({}, payload)
+console.log({}.isAdmin)  // undefined  ← 正常了
+```
+
+## 平时注意
+
+不要直接给内置对象的原型加方法，比如 `Array.prototype.myMethod = ...`。虽然很方便，但一旦 polyfill 或第三方库也这么做，容易冲突。如果要扩展，继承一个新类或者写工具函数是更安全的做法。

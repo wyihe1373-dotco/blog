@@ -1,0 +1,204 @@
+---
+title: "高阶函数实战：map、filter、reduce 和函数组合"
+description: "这几个函数用了很久，直到用 reduce 重写了一段数据转换逻辑，才算真的懂了"
+date: "2025-12-20"
+tags: ["学习笔记", "JavaScript", "函数式"]
+---
+
+写了很久 `forEach`，有一次被同事 code review，他指着我一段数据处理代码说「这段可以用 reduce 一行搞定」。我当时点点头，心里其实没太懂他说的。那之后我认真研究了一下这几个方法，才发现之前只是在表面用用。
+
+## map / filter / reduce 的本质
+
+这三个方法都是对数组的变换，区别在于输出：
+
+- `map`：一对一变换，输入 n 个元素，输出 n 个
+- `filter`：筛选，输出是输入的子集
+- `reduce`：折叠，把数组归约成任意类型的值（不一定是数组）
+
+`reduce` 是最通用的，`map` 和 `filter` 都可以用它实现：
+
+```js
+const arr = [1, 2, 3, 4, 5]
+
+// 用 reduce 实现 map
+const doubled = arr.reduce((acc, x) => {
+  acc.push(x * 2)
+  return acc
+}, [])
+// doubled → [2, 4, 6, 8, 10]
+
+// 用 reduce 实现 filter
+const evens = arr.reduce((acc, x) => {
+  if (x % 2 === 0) acc.push(x)
+  return acc
+}, [])
+// evens → [2, 4]
+```
+
+理解这一点之后，看到 `reduce` 就不慌了，知道它本质上就是「带着一个累积值遍历数组」。
+
+## reduce 的实际业务场景
+
+同事当时说的那段代码大概是这样——把后端返回的数组转成以 id 为 key 的对象，方便后续 O(1) 查找：
+
+```js
+// 输入
+const list = [
+  { id: 'fund_001', name: '沪深300ETF', nav: 1.234 },
+  { id: 'fund_002', name: '纳斯达克ETF', nav: 2.567 },
+]
+
+// 原来的写法（forEach + 赋值）
+const map = {}
+list.forEach(item => {
+  map[item.id] = item
+})
+
+// 用 reduce
+const map = list.reduce((acc, item) => {
+  acc[item.id] = item
+  return acc
+}, {})
+
+// 两种写法结果相同：
+// {
+//   fund_001: { id: 'fund_001', name: '沪深300ETF', nav: 1.234 },
+//   fund_002: { id: 'fund_002', name: '纳斯达克ETF', nav: 2.567 },
+// }
+
+// 之后查找就是 O(1)，不用每次都 list.find()
+console.log(map['fund_001'].name)  // '沪深300ETF'
+```
+
+第二种写法表达意图更清晰——「把数组折叠成一个对象」。
+
+另一个常用场景是按条件分组：
+
+```js
+const orders = [
+  { id: 1, status: 'completed', amount: 100 },
+  { id: 2, status: 'pending',   amount: 200 },
+  { id: 3, status: 'completed', amount: 150 },
+  { id: 4, status: 'failed',    amount: 80  },
+]
+
+const grouped = orders.reduce((acc, order) => {
+  const key = order.status
+  if (!acc[key]) acc[key] = []
+  acc[key].push(order)
+  return acc
+}, {})
+
+// grouped →
+// {
+//   completed: [{ id: 1, ... }, { id: 3, ... }],
+//   pending:   [{ id: 2, ... }],
+//   failed:    [{ id: 4, ... }],
+// }
+```
+
+## 函数组合：compose 和 pipe
+
+函数组合是把多个函数串起来，上一个的输出是下一个的输入。
+
+`compose` 从右到左执行，`pipe` 从左到右：
+
+```js
+// compose(f, g, h)(x) 等于 f(g(h(x)))
+const compose = (...fns) => x => fns.reduceRight((v, f) => f(v), x)
+
+// pipe(f, g, h)(x) 等于 h(g(f(x)))
+const pipe = (...fns) => x => fns.reduce((v, f) => f(v), x)
+```
+
+实际用法：
+
+```js
+const formatPrice = pipe(
+  (n) => n / 100,          // 分转元
+  (n) => n.toFixed(2),     // 保留两位小数
+  (s) => `¥${s}`           // 加货币符号
+)
+
+formatPrice(12345)  // ¥123.45
+```
+
+比嵌套调用 `formatCurrency(toFixed(divideBy100(12345)))` 可读性好很多。
+
+## 柯里化
+
+柯里化是把多参数函数变成一系列单参数函数：
+
+```js
+// 普通函数
+const add = (a, b) => a + b
+
+// 柯里化版本
+const curriedAdd = a => b => a + b
+
+curriedAdd(1)(2)  // 3
+const addOne = curriedAdd(1)  // 预置第一个参数
+addOne(5)  // 6
+```
+
+我实际用过的场景是事件处理函数的参数预置：
+
+```js
+// 不用柯里化
+items.map(item => (
+  <button onClick={() => handleClick(item.id)}>...</button>
+))
+
+// 柯里化版本
+const handleClick = id => e => {
+  // 处理点击
+}
+items.map(item => (
+  <button onClick={handleClick(item.id)}>...</button>
+))
+```
+
+`handleClick(item.id)` 返回一个新函数，直接作为 onClick 的值，不需要每次都写箭头函数包一层。
+
+## 偏函数 vs 柯里化
+
+两者容易混。区别：
+
+- **柯里化**：把 n 个参数的函数变成 n 个单参数函数的链
+- **偏函数**：固定一部分参数，返回接收剩余参数的函数
+
+```js
+// 柯里化：一次只传一个参数
+const multiply = a => b => a * b
+
+// 偏函数：一次可以固定多个参数
+const partial = (fn, ...preArgs) => (...laterArgs) => fn(...preArgs, ...laterArgs)
+
+const double = partial((a, b) => a * b, 2)
+double(5)  // 10
+```
+
+实际项目里偏函数用得多一些，比如封装带固定配置的 API 请求函数。
+
+## 什么时候用，什么时候不如直接写
+
+链式调用和函数组合有个缺点：调试困难。中间哪一步出了问题，不好定位。
+
+我的原则：**三步以内直接写，三步以上考虑 pipe**。
+
+```js
+// 这种直接写更清楚
+const result = items
+  .filter(item => item.active)
+  .map(item => item.name)
+
+// 数据处理流程很长、需要复用时，pipe 更合适
+const processOrder = pipe(
+  validateOrder,
+  applyDiscount,
+  calculateTax,
+  formatForDisplay
+)
+```
+
+函数式编程的优势在于组合和复用，但不是所有地方都适合强行套。可读性永远比「优雅」更重要。

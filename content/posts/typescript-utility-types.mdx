@@ -1,0 +1,173 @@
+---
+title: "TypeScript 实用类型：工作中真正用到的那些"
+description: "TS 的类型体操可以很复杂，但我日常用到的其实就那几个——记录一下实际场景"
+date: "2025-12-25"
+tags: ["学习笔记", "TypeScript"]
+---
+
+刚学 TypeScript 的时候，看到一些项目里的类型代码密密麻麻，条件类型、infer、递归类型，完全看不懂。当时觉得这东西就是炫技，实际项目用不到。
+
+用了一段时间之后改变了看法——基础的工具类型在业务代码里真的能减少很多重复，尤其是接口类型和组件 Props 之间的转换。类型体操那些深水区确实用不太到，但工具类型是真的在用。
+
+## Partial / Required / Readonly
+
+最常用的三个变换。
+
+**Partial** 把所有字段变可选，在表单场景里最有用。提交接口需要所有字段，但编辑表单里字段是逐步填写的，用 Partial 省去重复定义：
+
+```ts
+interface CreateOrderParams {
+  productId: string
+  quantity: number
+  address: string
+  couponCode: string
+}
+
+// 草稿态，所有字段可选
+type OrderDraft = Partial<CreateOrderParams>
+
+// 表单状态
+const [draft, setDraft] = useState<OrderDraft>({})
+```
+
+**Required** 是反过来，把所有可选字段变必选，确认提交前用来做类型收窄：
+
+```ts
+function submitOrder(order: Required<OrderDraft>) {
+  // 这里保证所有字段都有值
+}
+```
+
+**Readonly** 防止对象被修改，配置类的对象用这个：
+
+```ts
+const CONFIG: Readonly<AppConfig> = {
+  apiBase: 'https://api.example.com',
+  timeout: 5000,
+}
+```
+
+## Pick / Omit
+
+从一个大类型里取子集。后端接口返回的数据往往字段很多，组件只需要其中几个：
+
+```ts
+interface UserInfo {
+  id: string
+  name: string
+  email: string
+  phone: string
+  avatar: string
+  createdAt: string
+  role: string
+}
+
+// 只展示头像和名字的卡片组件
+type UserCardProps = Pick<UserInfo, 'id' | 'name' | 'avatar'>
+
+// 排除敏感字段
+type PublicUserInfo = Omit<UserInfo, 'phone' | 'email'>
+```
+
+这两个在配合接口自动生成的类型时特别方便，不需要手写新的类型，直接从已有类型裁剪。
+
+## Record
+
+构建 key-value 映射类型，替代写起来不够精确的 `{ [key: string]: T }`：
+
+```ts
+type Status = 'pending' | 'processing' | 'completed' | 'failed'
+
+const statusLabel: Record<Status, string> = {
+  pending: '待处理',
+  processing: '处理中',
+  completed: '已完成',
+  failed: '失败',
+}
+```
+
+用 `Record<Status, string>` 的好处是：Key 必须覆盖所有 Status 枚举值，少一个会报错。这样加新状态时不会漏掉对应的 label。
+
+## ReturnType / Parameters
+
+从函数推导类型，配合自动生成的 API 代码最有用。
+
+项目里用 openapi-typescript 生成了接口类型，API 函数的返回类型是自动推导的：
+
+```ts
+// 自动生成的 API 函数（类型也是自动的）
+const fetchUserList = async () => {
+  return api.get<UserListResponse>('/users')
+}
+
+// 不需要手动写 UserListResponse，直接从函数推导
+type UserListData = ReturnType<typeof fetchUserList>
+// 推导出 Promise<UserListResponse>
+
+// 用 Awaited 解包 Promise
+type UserList = Awaited<ReturnType<typeof fetchUserList>>
+```
+
+`Parameters` 用来拿函数的参数类型：
+
+```ts
+function createUser(name: string, role: 'admin' | 'user', options?: { notify: boolean }) {}
+
+type CreateUserParams = Parameters<typeof createUser>
+// [string, 'admin' | 'user', { notify: boolean }?]
+
+// 取第三个参数
+type CreateUserOptions = Parameters<typeof createUser>[2]
+```
+
+## infer：推导 Promise 的返回类型
+
+`infer` 是在条件类型里使用的，可以「捕获」类型推导过程中的某个类型。最常见的用法是展开 Promise：
+
+```ts
+type Awaited<T> = T extends Promise<infer R> ? R : T
+
+type A = Awaited<Promise<string>>  // string
+type B = Awaited<Promise<number[]>> // number[]
+type C = Awaited<string>           // string（不是 Promise，原样返回）
+```
+
+这个其实就是 TypeScript 内置 `Awaited` 的简化版实现。
+
+## 我写过最有用的工具类型：DeepPartial
+
+`Partial` 只处理第一层，嵌套对象里的字段还是必选的。表单里有嵌套对象时就不够用了：
+
+```ts
+type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P]
+}
+
+interface OrderForm {
+  basic: {
+    name: string
+    quantity: number
+  }
+  delivery: {
+    address: string
+    city: string
+  }
+}
+
+// 嵌套字段也全部变可选
+type OrderFormDraft = DeepPartial<OrderForm>
+// {
+//   basic?: { name?: string; quantity?: number }
+//   delivery?: { address?: string; city?: string }
+// }
+```
+
+在做草稿保存、分步表单的时候这个用了很多次。
+
+## 够用就好，不要过度
+
+类型体操很容易越写越复杂，最后写出只有自己能看懂的代码。我的标准是：
+
+**如果类型定义比实现代码还长，就要想想是不是过度了。**
+
+工具类型够用的时候不需要 infer，Pick/Omit 够用的时候不需要写条件类型。TS 的目的是帮助写代码，不是成为额外的负担。

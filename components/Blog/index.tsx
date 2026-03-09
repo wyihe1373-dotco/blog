@@ -9,7 +9,7 @@ export default function Blog() {
       <div className="px-6 max-w-6xl mx-auto mb-10">
         <p className="shimmer-text font-mono text-sm tracking-widest mb-2">HIGHLIGHTS</p>
         <div className="flex items-end justify-between">
-          <h2 className="text-3xl md:text-5xl font-bold text-white tracking-tight">工作亮点</h2>
+          <h2 className="text-3xl md:text-5xl font-bold text-white tracking-tight">技术沉淀</h2>
         </div>
       </div>
       <BlogCarousel posts={posts} />

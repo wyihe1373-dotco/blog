@@ -1,0 +1,154 @@
+---
+title: "骨架屏和加载态：让页面感觉快起来"
+description: "纯粹的 loading 转圈用户体验很差，改成骨架屏之后反馈好很多——记录一下实现思路"
+date: "2026-01-10"
+tags: ["前端工程", "CSS", "性能优化"]
+---
+
+H5 页面接口慢是常态，尤其是行情数据，有时候要等一两秒。早期我们用的是转圈 loading，每次都是空白页一个菊花转，产品反馈说用户觉得很卡、不知道在加载什么。改成骨架屏之后，虽然等待时间没变，但用户感知好了很多。这件事让我认识到，感知速度和实际速度一样重要。
+
+## loading 还是 skeleton，怎么选
+
+这两种方式的适用场景不一样：
+
+- **loading 转圈**：不知道内容是什么，或者操作很快（< 300ms）就能完成，用 loading
+- **骨架屏**：知道内容的大概形状（列表、卡片、详情页），加载时间超过 300ms，用 skeleton
+
+如果内容形状完全不固定（比如搜索结果可能是 0 条也可能是 100 条），硬上骨架屏反而体验差——内容出来之后布局跳动太剧烈。
+
+## CSS-only 骨架屏：shimmer 动画
+
+不需要引入任何库，纯 CSS 就能做出效果：
+
+```css
+/* 骨架屏基础样式 */
+.skeleton {
+  background: #1a1a2e;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* shimmer 光扫动画 */
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 50%,
+    transparent 100%
+  );
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+```
+
+然后用不同的尺寸组合出各种骨架形状：
+
+```jsx
+// 基础骨架组件
+const SkeletonLine = ({ width = '100%', height = 16 }: { width?: string | number; height?: number }) => (
+  <div className="skeleton" style={{ width, height, borderRadius: 4 }} />
+)
+
+const SkeletonAvatar = ({ size = 40 }: { size?: number }) => (
+  <div className="skeleton" style={{ width: size, height: size, borderRadius: '50%' }} />
+)
+
+// 组合成卡片骨架
+const SkeletonCard = () => (
+  <div style={{ display: 'flex', gap: 12, padding: 16 }}>
+    <SkeletonAvatar size={48} />
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <SkeletonLine width="60%" height={18} />
+      <SkeletonLine width="80%" height={14} />
+      <SkeletonLine width="40%" height={14} />
+    </div>
+  </div>
+)
+```
+
+## 结合接口请求状态控制显示
+
+```tsx
+const FundCard = ({ fundCode }: { fundCode: string }) => {
+  const { data, isLoading } = useFundInfo(fundCode)
+
+  if (isLoading) return <SkeletonCard />
+
+  return (
+    <div>
+      <img src={data.logo} alt={data.name} />
+      <h3>{data.name}</h3>
+      <p>{data.desc}</p>
+    </div>
+  )
+}
+```
+
+注意要尽量让骨架屏和真实内容的高度接近，避免出现骨架屏消失、真实内容撑开时的布局抖动（Layout Shift）。
+
+## 图片占位：避免图片加载时跳动
+
+图片加载前高度是 0，加载完突然撑高，整个页面向下跳动，体验很差。
+
+用 `aspect-ratio` 预占位：
+
+```css
+.fund-logo {
+  width: 48px;
+  aspect-ratio: 1;          /* 保持正方形 */
+  background: #1a1a2e;      /* 占位色 */
+  border-radius: 8px;
+  object-fit: cover;
+}
+```
+
+`aspect-ratio` 会在图片加载前就保持对应的高宽比，页面不会跳动。
+
+对于不知道尺寸的图片，可以给容器设置 `min-height`：
+
+```css
+.banner-container {
+  min-height: 160px;
+  background: #1a1a2e;
+}
+```
+
+## 渐进加载：图片从模糊到清晰
+
+另一种提升感知的方式是先加载极低质量的小图占位，等高质量图加载完再替换：
+
+```tsx
+const ProgressiveImage = ({ src, placeholder }: { src: string; placeholder: string }) => {
+  const [loaded, setLoaded] = useState(false)
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {/* 低质量占位图，始终显示 */}
+      <img
+        src={placeholder}
+        style={{ filter: loaded ? 'none' : 'blur(10px)', transition: 'filter 0.3s' }}
+      />
+      {/* 高质量图，加载完后覆盖 */}
+      <img
+        src={src}
+        onLoad={() => setLoaded(true)}
+        style={{ position: 'absolute', inset: 0, opacity: loaded ? 1 : 0, transition: 'opacity 0.3s' }}
+      />
+    </div>
+  )
+}
+```
+
+## 一个教训：骨架屏要和真实内容形状接近
+
+有一次做了个骨架屏，三行文字占位，结果真实数据只有一行，内容出来后高度直接从高变低，跳动反而比没有骨架屏更明显。
+
+现在的原则是：先确认真实内容的大致形状，再设计骨架屏。如果内容高度变化很大，宁愿用 loading，不要强行用骨架屏。
