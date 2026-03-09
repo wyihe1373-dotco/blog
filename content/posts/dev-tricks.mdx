@@ -1,0 +1,165 @@
+---
+title: "前端开发小技巧：工具与调试"
+description: "日常用得最多的那些技巧——Chrome DevTools、VS Code、Git，每个都能省不少时间"
+date: "2026-01-15"
+tags: ["前端工程", "工具"]
+---
+
+开发效率很大程度上取决于工具熟不熟。这里记录一下我日常用到最多的技巧，不是大而全的清单，是真正高频用到的那些。
+
+## Chrome DevTools
+
+### console 不只有 log
+
+```js
+// 带标签输出对象，展开后能看到字段
+console.log('user:', user)
+
+// 表格格式，数组对象一目了然
+console.table(fundList)
+// 输出：
+// ┌─────────┬────────────┬──────────┬───────┐
+// │ (index) │     id     │   name   │  nav  │
+// ├─────────┼────────────┼──────────┼───────┤
+// │    0    │ 'fund_001' │ '沪深300' │ 1.234 │
+// │    1    │ 'fund_002' │ '纳指ETF' │ 2.567 │
+// └─────────┴────────────┴──────────┴───────┘
+
+// 分组折叠
+console.group('请求详情')
+console.log('url:', url)
+console.log('params:', params)
+console.groupEnd()
+
+// 计时
+console.time('接口耗时')
+await fetchData()
+console.timeEnd('接口耗时')
+// 接口耗时: 234.12ms
+```
+
+### 断点调试代替 console.log
+
+`console.log` 只能打印当时的值，遇到异步或者循环逻辑容易看不清楚。断点能暂停执行、查看完整调用栈。
+
+在代码里加 `debugger` 语句，打开 DevTools 后运行到那里会自动暂停：
+
+```js
+async function loadFundData(code) {
+  const raw = await api.getFund(code)
+  debugger  // 在这里暂停，左侧 Scope 面板能看到 raw 的完整内容
+  const formatted = formatFund(raw)
+  return formatted
+}
+```
+
+也可以直接在 Sources 面板点行号打断点，不用改代码。**条件断点**更实用：右键行号 → "Add conditional breakpoint"，填 `code === 'fund_001'`，只在满足条件时才停，不用每次都手动跳过。
+
+### Network 面板
+
+**模拟慢网络**：Network 面板顶部 → Throttle → 选 "Slow 3G"，能复现用户弱网下的体验，骨架屏和 loading 态测试必用。
+
+**Copy as fetch**：右键某个请求 → "Copy" → "Copy as fetch"，粘贴到 console 直接重放这个请求，调接口时不用重新触发页面操作。
+
+**XHR/Fetch 过滤**：Filter 里输入 `-` 可以排除，比如 `-favicon` 把 favicon 请求过滤掉，只看业务接口。
+
+### Elements 面板
+
+选中元素后直接在 Styles 面板改 CSS，改完复制出来。比在代码里改→保存→刷新的循环快很多。
+
+**强制 hover/focus 状态**：选中元素 → 右上角 `:hov` → 勾选 `:hover`，不需要鼠标悬停就能看 hover 样式，调下拉菜单特别好用。
+
+## VS Code
+
+### 多光标编辑
+
+`Option + Click`（Mac）在多处同时放光标，然后一起编辑。改多个变量名、批量加前缀都能用。
+
+`Cmd + D` 选中当前词，再按一次选下一个相同的词，依次添加光标，批量重命名很快。
+
+### 快速定位
+
+`Cmd + P`：按文件名跳转，输入文件名关键词，不用在侧边栏一层层找。
+
+`Cmd + Shift + O`：在当前文件里按符号（函数名、变量名）跳转，大文件里定位函数很快。
+
+`Cmd + Click`：跳转到定义，比手动搜索快。
+
+### 终端操作
+
+`Ctrl + 反引号`：打开/关闭集成终端，不用切窗口。
+
+多个终端 `Cmd + Shift + 5` 分屏，左边跑 dev server，右边执行 git 命令，互不干扰。
+
+## Git 实用命令
+
+### stash 临时保存
+
+切分支前有未提交的修改，不想提交又不想丢，用 stash：
+
+```bash
+git stash          # 把当前改动暂存
+git checkout fix/xxx
+# 做完之后
+git checkout main
+git stash pop      # 恢复之前的改动
+```
+
+### 撤销上一次提交（保留改动）
+
+提交了但发现有问题，想重新改再提：
+
+```bash
+git reset HEAD~1   # 撤销提交，改动回到工作区
+# 修改后重新提交
+```
+
+### 查看某行代码谁写的
+
+```bash
+git blame src/components/FundCard.tsx
+# 每一行前面显示 commit hash、作者、时间
+```
+
+找到有问题的行之后，用 commit hash 查当时的改动：
+
+```bash
+git show abc1234
+```
+
+### cherry-pick 单独应用某个提交
+
+分支 A 有个 bugfix 提交，想搬到分支 B，不用整个 merge：
+
+```bash
+git checkout branch-b
+git cherry-pick abc1234  # abc1234 是那个 bugfix 的 commit hash
+```
+
+## 移动端调试
+
+### iOS Safari 真机调试
+
+用数据线连 Mac，iPhone 上打开 Safari，Mac Safari → 开发菜单 → 选择设备 → 选择页面，能看到真实机器上的 DOM 和 Console，比 Chrome 模拟准确很多。
+
+WeChat 内嵌页调试：微信开发者工具 → 公众号网页，或者用 [vconsole](https://github.com/Tencent/vConsole) 在页面里注入一个调试面板：
+
+```js
+// 开发环境注入，生产不打包
+if (process.env.NODE_ENV === 'development') {
+  import('vconsole').then(({ default: VConsole }) => new VConsole())
+}
+```
+
+手机上就能看 Console、Network、Storage，解决了 WebView 里没有 DevTools 的问题。
+
+### 快速看真机效果
+
+开发机和手机连同一个 WiFi，起 dev server 时用 `--host 0.0.0.0`：
+
+```bash
+npm run dev -- --host 0.0.0.0
+# 终端输出：Network: http://192.168.1.x:3000
+```
+
+手机浏览器直接访问那个 IP，实时预览，热更新也能用。
