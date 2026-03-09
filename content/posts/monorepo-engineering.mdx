@@ -1,70 +1,258 @@
 ---
-title: "Monorepo 工程体系：大型 H5 平台的自动化基础设施"
-description: "36+ 应用、39 个共享包的大仓为什么构建会乱、架构会腐化、CI 会变慢——以及我们是怎么一个个修掉的"
+title: "Monorepo 工程实践：从搭建到共享包落地"
+description: "36+ H5 app、39 个共享包的大仓是怎么搭起来的：Yarn Workspaces 配置、公共组件和插件的使用方式、以及工程化问题的解法"
 date: "2025-10-20"
-tags: ["Monorepo", "工程化", "CI/CD", "工具链"]
+tags: ["Monorepo", "工程化", "工具链"]
 ---
 
-## 技术选型
+## 为什么用 Monorepo
 
-多个 H5 app 共享大量代码时，有两个方向：
+项目有 36+ 个 H5 app，早期每个 app 都是独立仓库。共享代码走 npm 包，改动要先发版，消费方再升级，联调一个改动要来回跑好几次。版本碎片化严重——10 个 app 可能依赖同一个包的 10 个不同版本。
 
-- **Multi-repo**：每个 app 独立仓库，共享代码发 npm 包。问题是版本碎片化——10 个 app 可能依赖同一个包的 10 个不同版本，联调改动要发版才能生效
-- **Monorepo（Yarn Workspaces）**：所有代码在同一仓库，共享包直接 `workspace:*` 引用，改动即时生效
+Monorepo 的核心优势是：共享包直接用 `workspace:*` 引用，改动即时生效，不需要发包流程。
 
-选 Yarn Workspaces 而非 Nx/Turborepo 的原因：项目已有 Yarn 基础设施，Workspaces 是内置能力，引入 Nx 需要迁移成本且在当时项目规模下收益不明显。但 Yarn 原生不解决构建顺序问题，这部分我们自己处理。
+## 从零搭建
 
----
+### 第一步：配置 Yarn Workspaces
 
-## 为了解决什么问题
-
-随着 app 数量增长到 36+、共享包到 39 个，三个问题变得严重：
-
-1. **构建顺序混乱**：`apps/fund` 依赖 `@pkgs/devkit`，但 `devkit` 需要先编译。新人第一次 `yarn dev fund` 必然报找不到模块
-2. **架构边界失控**：SDK 层不该引用业务 package，但没有任何机制阻止。出现了 SDK 里悄悄 import 业务逻辑的情况，只有 CI 跑完才发现
-3. **开发体验慢**：Prettier + ESLint 在 100+ 文件上跑要十几秒，提交前的 lint 耗时影响开发节奏
-
----
-
-## 实际开发中碰到的问题
-
-### 问题一：构建顺序没有标准解法
-
-Yarn Workspaces 的 `yarn workspaces run build` 是并行的，不保证顺序。`@pkgs/devkit` 还没编译，`apps/fund` 已经在跑 TypeScript 编译并试图 import `dist/` 下的文件——必然失败。
-
-手动文档说明"先 build devkit 再 build fund"是不可靠的，换个环境就会忘。
-
-我们在 `package.json` 加了一个自定义字段 `buildDependencies`，声明构建前置依赖：
+根目录 `package.json` 声明所有工作区：
 
 ```json
 {
-  "name": "fund",
-  "buildDependencies": ["devkit", "components"]
+  "name": "h5hub",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "sdk/*"
+  ]
 }
 ```
 
-然后写了一个 CLI，执行 `yarn dev fund` 时自动检查前置依赖是否已编译，按需触发构建：
+`yarn install` 会把所有包的依赖提升到根目录 `node_modules`，各包之间通过软链接互相引用。
+
+### 第二步：TypeScript 路径映射
+
+根目录 `tsconfig.json` 配置路径别名，让 `@pkgs/xxx` 指向 `packages/xxx`：
+
+```json
+{
+  "compilerOptions": {
+    "paths": {
+      "@pkgs/*": ["packages/*"]
+    },
+    "baseUrl": "."
+  }
+}
+```
+
+这样 `import { postV1FundList } from '@pkgs/client'` 在 TypeScript 层面会正确解析到 `packages/client/src/index.ts`，有完整的类型提示。
+
+Vite 侧用 `vite-tsconfig-paths` 插件读取这个映射，构建时自动处理模块解析：
 
 ```typescript
-const needBuild: string[] = []
-buildDependencies?.forEach((dep: string) => {
-  if (!checkBuildDependencie(dep)) needBuild.push(dep)
+// vite.config.ts
+import tsconfigPaths from 'vite-tsconfig-paths'
+
+export default defineConfig({
+  plugins: [tsconfigPaths()]
 })
+```
+
+### 目录结构
+
+```
+h5hub/
+├── apps/               # 36+ H5 应用
+│   ├── fund/           # 基金 app
+│   ├── cert/           # 证书
+│   ├── auth/           # 登录
+│   └── ...
+├── packages/           # 共享包（约 39 个）
+│   ├── client/         # API 调用函数（codegen 生成）
+│   ├── components/     # 公共 UI 组件
+│   ├── devkit/         # 构建工具包
+│   ├── constants/      # 业务常量
+│   ├── i18n/           # 国际化
+│   └── ...
+└── sdk/                # 底层 SDK
+```
+
+---
+
+## 共享包的两种模式
+
+### 源码直引（不需要构建）
+
+`@pkgs/client`、`@pkgs/components` 等大部分包直接把 `main` 指向源码：
+
+```json
+{
+  "name": "@pkgs/components",
+  "main": "index.ts",
+  "types": "index.ts"
+}
+```
+
+应用通过 `@pkgs/components` 引入时，Vite 找到 `packages/components/index.ts`，和引入普通文件没有区别，由 Vite 一起编译。
+
+好处是改了包里的代码，应用热更新立刻生效，不需要预先跑 `build`。
+
+### 需要预先构建的包
+
+`@pkgs/devkit` 是个例外——它的输出是 Vite 插件，被 `vite.config.ts` 在启动阶段引入：
+
+```json
+{
+  "name": "@pkgs/devkit",
+  "main": "./output/index.js",
+  "types": "./output/index.d.ts"
+}
+```
+
+`vite.config.ts` 运行在 Node.js 环境，Vite 还没启动、没法做模块转换，所以 devkit 必须提前编译成 CommonJS。开发前需要先跑一次：
+
+```bash
+yarn build devkit  # 编译 devkit
+yarn dev fund      # 再启动应用
+```
+
+---
+
+## 公共 Vite 插件：@pkgs/devkit
+
+每个 app 的 `vite.config.ts` 其实只有五行：
+
+```typescript
+import { defineConfig } from 'vite'
+import { vitePluginH5Hub } from '@pkgs/devkit'
+
+export default defineConfig(() => ({
+  plugins: [vitePluginH5Hub()]
+}))
+```
+
+所有的公共配置都封装在 `vitePluginH5Hub()` 里，包括：
+
+**React + 路径解析：**
+
+```typescript
+return [
+  ...react(),              // React Fast Refresh
+  tsconfigPaths(),         // @pkgs/* 路径映射
+  legacyConfigPlugin,      // 兼容 Chrome 60+
+  commonPluginConfig,      // 代理 + 主题注入
+]
+```
+
+**多环境代理配置：**根据 `proxy` 环境变量自动切换请求目标：
+
+```typescript
+const getProxyTarget = (proxy: string) => {
+  switch (proxy) {
+    case 'sit':    return 'https://m.sit.example.com'
+    case 'canary': return 'https://m.canary.example.com'
+    default:       return 'https://m.example.com'
+  }
+}
+```
+
+跑 `proxy=sit yarn dev fund` 就能把所有 `/api` 请求指向 SIT 环境，不需要每个 app 各自配。
+
+**主题注入：**`transformIndexHtml` 钩子在 HTML 的 `</head>` 前注入主题检测脚本，在 App 内打开时自动读取 UA 里的主题标识设置主题：
+
+```typescript
+async transformIndexHtml(html) {
+  const scriptTag = `<script>
+    const mode = getThemeModeByQuery() || getThemeModeByUA() || 'light'
+    document.documentElement.setAttribute('theme', mode)
+    document.documentElement.classList.add('theme-' + mode)
+  </script>`
+  return html.replace('</head>', `${scriptTag}</head>`)
+}
+```
+
+没有 devkit 之前，每个 app 都要维护这一百多行配置，而且难以同步更新。
+
+---
+
+## 公共 UI 组件：@pkgs/components
+
+`@pkgs/components` 封装了项目里高频使用的 UI 组件，基于 antd-mobile 二次封装，加了项目特有的主题和交互逻辑：
+
+```
+packages/components/
+├── src/
+│   ├── popup/       # 弹出层（内置 Teleport to body）
+│   ├── picker/      # 选择器
+│   ├── date-picker/ # 日期选择器
+│   ├── loading/     # 全局 Loading
+│   └── layout/      # 页面布局
+├── index.ts         # 统一导出
+└── package.json
+```
+
+应用里直接 import：
+
+```typescript
+import { Popup, Loading } from '@pkgs/components'
+```
+
+修改 `@pkgs/components` 里的组件，所有引用它的 app 热更新立刻反映，不需要任何发包流程。
+
+---
+
+## 日常工作流
+
+`yarn dev fund` 的背后：
+
+```bash
+# 等价于直接跑 vite，但 CLI 先检查前置依赖
+yarn dev fund
+
+# CLI 内部逻辑：
+# 1. 读取 apps/fund/package.json 的 buildDependencies 字段
+# 2. 检查 packages/devkit/output/ 是否存在
+# 3. 如果缺失，先自动 build devkit
+# 4. 再启动 fund 的 dev server
+```
+
+`buildDependencies` 字段声明构建前置依赖，而不是运行时依赖：
+
+```json
+{
+  "name": "@apps/fund",
+  "buildDependencies": ["devkit"]
+}
+```
+
+新人 clone 仓库后第一次跑 `yarn dev fund`，不需要看文档，CLI 自动处理依赖顺序。
+
+---
+
+## 三个绕不开的工程化问题
+
+### 构建顺序
+
+Yarn Workspaces 的 `yarn workspaces run build` 是并行的，不保证顺序。`@pkgs/devkit` 还没编译好，`@apps/fund` 就已经开始找 `output/index.js`——必然报错。
+
+用 `buildDependencies` + 自定义 CLI 解决：
+
+```typescript
+const needBuild = buildDependencies?.filter(dep => !checkBuildDependencie(dep)) ?? []
 if (needBuild.length) {
-  // 先依次构建缺失的前置依赖
-  const cmds = needBuild.map((d, i) => [i === 0 ? null : 'yarn', action, d].filter(Boolean))
+  // 按顺序先 build 前置依赖
+  const cmds = needBuild.map((d, i) =>
+    [i === 0 ? null : 'yarn', 'build', d].filter(Boolean)
+  )
   cmds.push(['yarn', 'workspace', app, 'run', action])
   yarnRun(cmds.flat(), envVars)
 }
 ```
 
-### 问题二：架构边界靠 Code Review 人工保证
+### 架构边界
 
-SDK 层（`@sdk/app`）是基础设施，不应该依赖业务 package（`@pkgs/*`），否则会形成循环依赖，也让 SDK 难以独立维护。
-
-但这个约束只写在文档里，没有技术手段阻止。某次 Review 发现 SDK 里 import 了一个业务工具函数，追查后发现已经存在了几个月。
-
-解法是用 import-lint 把架构规则写成配置，每次提交触发检查：
+SDK 层是基础设施，不应该引用业务 package，否则会形成循环依赖。这个约束只写在文档里不够，用 `import-lint` 把规则写成配置，提交时自动扫描暂存文件：
 
 ```json
 {
@@ -78,51 +266,14 @@ SDK 层（`@sdk/app`）是基础设施，不应该依赖业务 package（`@pkgs/
 }
 ```
 
-配合 pre-commit hook，只扫描 git 暂存区的文件，基本不影响提交速度：
+### 大仓 lint 速度
 
-```typescript
-const files = options.staged
-  ? filterFilesByProject(getStagedFiles(), projectPath)
-  : getProjectFiles(projectPath, globalConfig, rule.exclude)
-```
+Prettier 和 ESLint 是 Node.js 实现的，单文件处理快，但大仓 100+ 文件全量扫描需要十几秒。pre-commit hook 每次提交都触发，体验很差，开发时容易选择用 `--no-verify` 绕过，规范形同虚设。
 
-### 问题三：Prettier 在大仓跑太慢
+Oxc 是用 Rust 写的同类工具——`oxfmt` 对应 Prettier 做格式化，`oxlint` 对应 ESLint 做代码检查。Rust 的执行效率比 Node.js 高得多，同样的文件集速度提升 10–50 倍。pre-commit 从十几秒缩短到不到一秒。
 
-大仓有 100+ 文件需要格式化时，Node.js 实现的 Prettier 每次全量跑需要十几秒。开发者开始绕过 lint，`--no-verify` 提交，反而带来更多问题。
-
-换成 Rust 实现的 Oxc 工具链（`oxfmt` + `oxlint`）后，同样的文件集速度提升了 10-50x，pre-commit 的体感接近无感。
+迁移成本主要是规则兼容性——oxlint 不支持所有 ESLint 插件，迁移前需要核对规则覆盖范围。格式化规则基本兼容，oxfmt 的输出和 Prettier 差异很小。
 
 ---
 
-## 解决方案代码汇总
-
-自定义 CLI 构建编排：
-
-```typescript
-// scripts/cli/index.ts
-const runPackagePreSetScript = async () => {
-  const { buildDependencies } = await getPkgJson(dir)
-  const needBuild = buildDependencies?.filter((dep: string) => !checkBuildDependencie(dep)) ?? []
-  if (needBuild.length) {
-    const cmds = needBuild.map((d: string, i: number) =>
-      [i === 0 ? null : 'yarn', action, d].filter(Boolean)
-    )
-    cmds.push(['yarn', 'workspace', app, 'run', action])
-    yarnRun(cmds.flat(), envVars)
-  } else {
-    yarnRun(['workspace', app, 'run', action], envVars)
-  }
-}
-```
-
-GitLab CI 接入双模型 AI Review，每次 MR 自动触发，结果 comment 到 MR 上：
-
-```yaml
-ai-review-sonnet:
-  stage: review
-  extends: .ai-review
-  variables:
-    AI_REVIEW_MODEL: claude-sonnet-4-20250514
-```
-
-三个方案各自独立，可以按需引入，也可以同时使用。核心思路一样：**把人工约束变成工具约束**，文档里写的规范，靠机器来执行。
+核心思路：把人工约束变成工具约束。文档里写的规范，靠机器来执行。
