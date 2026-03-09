@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import Script from 'next/script'
 import './globals.css'
 import CursorSpotlight from '@/components/CursorSpotlight'
 
@@ -18,6 +19,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="overflow-x-hidden w-full">
           {children}
         </div>
+        <Script
+          defer
+          src="https://static.cloudflareinsights.com/beacon.min.js"
+          data-cf-beacon='{"token": "90f1971fc9ae4053b8bf0751f1b4d697"}'
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   )
