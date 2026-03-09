@@ -39,7 +39,7 @@ const experience = [
   {
     company: '东华重工（驻场）',
     role: '前端开发工程师',
-    period: '2021.05 – 2021.12',
+    period: '2020.07 – 2022.02',
     desc: '独立负责工厂信息化系统全链路，配合建模工程师完成 Three.js 3D 工厂可视化大屏。',
     tags: ['Vue2', 'Three.js', 'UniApp', '大屏可视化'],
   },

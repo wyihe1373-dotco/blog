@@ -1,5 +1,5 @@
 'use client'
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { motion, useInView, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import type { PostMeta } from '@/lib/posts'
@@ -19,9 +19,12 @@ const CATEGORIES = [
 export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
   const ref = useRef<HTMLDivElement>(null)
   const inView = useInView(ref, { once: true, margin: '-80px 0px' })
-  const [active, setActive] = useState(() =>
-    typeof window !== 'undefined' ? (sessionStorage.getItem('blog-tab') ?? '全部') : '全部'
-  )
+  const [active, setActive] = useState('全部')
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem('blog-tab')
+    if (saved) setActive(saved)
+  }, [])
 
   const handleTabChange = (label: string) => {
     setActive(label)
