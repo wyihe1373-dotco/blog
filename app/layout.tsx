@@ -21,8 +21,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </div>
         <Script
           defer
-          src="https://static.cloudflareinsights.com/beacon.min.js"
-          data-cf-beacon='{"token": "90f1971fc9ae4053b8bf0751f1b4d697"}'
+          src="https://blog-umami-analytics.vercel.app/script.js"
+          data-website-id="39e85bcb-69d6-4198-afe7-48d81a96d9aa"
           strategy="afterInteractive"
         />
       </body>
