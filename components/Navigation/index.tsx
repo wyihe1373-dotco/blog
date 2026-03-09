@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 const links = [
   { label: '关于我', href: '#skills' },
   { label: '项目', href: '#projects' },
-  { label: '工作亮点', href: '#blog' },
+  { label: '技术沉淀', href: '#blog' },
   { label: '联系我', href: '#contact' },
 ]
 

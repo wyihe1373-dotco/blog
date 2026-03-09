@@ -1,0 +1,168 @@
+---
+title: "CSS 移动端适配：rem、vw 和我最终选的方案"
+description: "从 rem + flexible 一路用到 vw 方案，中间踩了不少坑，记录一下选型过程和实际效果"
+date: "2025-12-15"
+tags: ["学习笔记", "CSS", "移动端"]
+---
+
+接手第一个 H5 项目的时候，什么适配方案都没想过，直接按 750px 的设计稿写了固定像素。上线后在不同手机上一打开，宽的撑开了，窄的截断了。从那之后我才开始认真看适配这件事。
+
+## rem + flexible 方案
+
+这是很多项目早期用的方案。核心思路是：根据屏幕宽度动态修改 `html` 的 `font-size`，然后把 px 换算成 rem。
+
+```js
+// flexible.js 的核心逻辑（简化版）
+const setRem = () => {
+  const width = document.documentElement.clientWidth
+  document.documentElement.style.fontSize = width / 10 + 'px'
+}
+setRem()
+window.addEventListener('resize', setRem)
+```
+
+设计稿 750px，`html font-size` 就是 75px，那 1rem = 75px。设计稿上 150px 的元素写 `2rem`。
+
+| 手机宽度 | html font-size | 设计稿 150px 元素 | 实际渲染 |
+|---------|---------------|-----------------|---------|
+| 320px   | 32px          | 4.6875rem        | 150px（等比缩小）|
+| 375px   | 37.5px        | 4rem             | 150px（等比缩小）|
+| 750px   | 75px          | 2rem             | 150px（基准）|
+
+配合 postcss-pxtorem，写 px，构建时自动转 rem。
+
+**为什么我后来放弃了**：
+
+一是会影响所有以 em/rem 为单位的第三方组件，字体可能错位；二是在高清屏上 1px 边框的问题更难处理，因为 `font-size` 计算出来往往是小数；三是 flexible.js 已经停止维护了，阿里官方自己也不推了。
+
+## vw/vh 方案
+
+vw 是视口宽度的百分之一，直接和屏幕宽度挂钩，不需要 JS 动态修改任何东西。
+
+750px 设计稿，1px = `1/750 * 100vw`。用 postcss-px-to-viewport 自动转换：
+
+```js
+// vite.config.ts 或 postcss.config.js
+import pxToViewport from 'postcss-px-to-viewport'
+
+export default {
+  plugins: [
+    pxToViewport({
+      viewportWidth: 750,  // 设计稿宽度
+      unitPrecision: 5,    // 转换精度
+      viewportUnit: 'vw',
+      selectorBlackList: ['.ignore'],  // 不转换的类名
+      minPixelValue: 1,    // 小于 1px 不转换
+    })
+  ]
+}
+```
+
+转换效果：
+
+```css
+/* 写代码时 */
+.header { height: 100px; font-size: 28px; }
+
+/* 构建后 */
+.header { height: 13.33333vw; font-size: 3.73333vw; }
+
+/* 在 375px 手机上实际渲染：100px * (375/750) = 50px ✓ */
+/* 在 414px 手机上实际渲染：100px * (414/750) = 55.2px ✓ */
+```
+
+**vw 的限制**：在平板或宽屏上，元素会无限放大，需要配合 `max-width` 限制最大宽度。
+
+## 媒体查询和 container query
+
+当需要响应不同屏幕尺寸做布局调整时用媒体查询：
+
+```css
+/* 手机竖屏 */
+@media (max-width: 480px) {
+  .card { flex-direction: column; }
+}
+/* 平板 */
+@media (min-width: 768px) {
+  .card { flex-direction: row; }
+}
+```
+
+container query 是更新的方案，基于父容器宽度而不是视口宽度来响应，更适合组件级别的适配：
+
+```css
+.card-container {
+  container-type: inline-size;
+}
+
+@container (min-width: 400px) {
+  .card { flex-direction: row; }
+}
+```
+
+我在 H5 项目里用 container query 做过卡片组件，同一个组件放在不同宽度的容器里，自动切换横/竖布局，比媒体查询灵活很多。
+
+## 我实际用的方案
+
+现在 H5 项目里用的是 **vw + safe-area-inset**。vw 处理大小适配，safe-area-inset 处理刘海屏和底部 Home 键区域：
+
+```css
+/* index.css / global.css */
+:root {
+  --safe-top: env(safe-area-inset-top);
+  --safe-bottom: env(safe-area-inset-bottom);
+}
+
+.page-header {
+  padding-top: calc(var(--safe-top) + 12px);
+}
+
+.page-footer {
+  padding-bottom: calc(var(--safe-bottom) + 16px);
+}
+```
+
+HTML 里要加 viewport meta：
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+```
+
+`viewport-fit=cover` 是让页面延伸到安全区之外，然后用 padding 把内容推回来。
+
+## 1px 物理像素问题
+
+设备像素比（DPR）是 2 或 3 的屏幕上，CSS 的 1px 实际渲染成 2 或 3 个物理像素，看起来偏粗。
+
+用 transform scaleY 解决：
+
+```css
+.border-bottom {
+  position: relative;
+}
+.border-bottom::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 1px;
+  background: #e5e5e5;
+  transform: scaleY(0.5);  /* DPR=2 的屏幕 */
+  transform-origin: 0 bottom;
+}
+
+/* 更精确的做法 */
+@media (-webkit-min-device-pixel-ratio: 3) {
+  .border-bottom::after {
+    transform: scaleY(0.333);
+  }
+}
+```
+
+## 一个坑：fixed 定位 + transform
+
+在 H5 里，如果某个祖先元素有 `transform`、`filter` 或 `perspective` 属性，`position: fixed` 的子元素会相对于这个祖先定位，而不是视口。
+
+这个问题在做弹窗动画时遇到过。弹窗是 `position: fixed`，但父容器有 `transform` 做入场动画，结果弹窗位置完全乱了。
+
+解决方案：把 fixed 定位的元素移到没有 transform 的祖先容器下，或者用 `position: absolute` + JS 计算位置代替。

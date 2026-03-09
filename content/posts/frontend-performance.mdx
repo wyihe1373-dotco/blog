@@ -175,7 +175,7 @@ const Particles = dynamic(() => import('@/components/Particles'), { ssr: false }
 
 **折叠内容分包**
 
-首屏只需要 Hero 区域，下面的「关于我」「项目」「工作亮点」「联系我」都在折叠以下，用 `next/dynamic` 按需加载：
+首屏只需要 Hero 区域，下面的「关于我」「项目」「技术沉淀」「联系我」都在折叠以下，用 `next/dynamic` 按需加载：
 
 ```tsx
 const Projects = dynamic(() => import('@/components/Projects'))

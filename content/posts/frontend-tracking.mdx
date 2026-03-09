@@ -1,0 +1,152 @@
+---
+title: "前端埋点方案：从手动上报到统一封装"
+description: "H5 项目做埋点需求做了很多次，记录一下从最开始到现在的做法演变"
+date: "2026-01-05"
+tags: ["前端工程", "H5", "业务"]
+---
+
+H5 业务对数据依赖很重，产品经理需要知道用户在哪个步骤流失、哪个按钮点击率高、哪些区域曝光了但没转化。所以埋点需求做了很多次，从最开始的每次都手写，到后来抽出统一的封装，中间也踩了不少坑。
+
+## 手动埋点 vs 自动埋点
+
+这两种方式各有适用场景。
+
+**手动埋点**：在关键操作的地方主动调用上报函数，灵活度高，可以携带任意业务数据。适合点击行为、表单提交、关键业务节点。
+
+**自动埋点**：通过全局监听（比如挂载到 `document` 的 click 事件），自动收集所有点击，配合 `data-track-*` 属性标记元素。适合做点击热图、全量收集，但业务数据不好携带。
+
+我的项目里主要用手动埋点，少量结合 `data-track` 属性做半自动的点击采集。
+
+## 点击埋点
+
+最简单的版本，直接在事件处理里调用上报：
+
+```ts
+// 定义事件格式
+interface TrackEvent {
+  event: string       // 事件名，如 'click_buy_button'
+  page: string        // 页面标识
+  params?: Record<string, unknown>  // 附加参数
+}
+
+// 上报函数
+const track = (event: TrackEvent) => {
+  // 上报到数据平台
+  reporter.send({
+    ...event,
+    ts: Date.now(),
+    uid: getUid(),
+    ua: navigator.userAgent,
+  })
+}
+
+// 使用
+<button onClick={() => track({ event: 'click_buy', page: 'fund_detail', params: { fundCode } })}>
+  买入
+</button>
+```
+
+## 曝光埋点：IntersectionObserver
+
+曝光埋点比点击复杂，因为需要检测元素是否进入视口，还要避免重复上报。
+
+用 `IntersectionObserver` 实现：
+
+```ts
+const useExposure = (eventName: string, params?: Record<string, unknown>) => {
+  const ref = useRef<HTMLDivElement>(null)
+  const reported = useRef(false)  // 防止重复上报
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !reported.current) {
+          reported.current = true
+          track({ event: eventName, page: getCurrentPage(), params })
+          observer.disconnect()  // 上报一次后停止观察
+        }
+      },
+      { threshold: 0.5 }  // 露出 50% 才算曝光
+    )
+
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return ref
+}
+
+// 使用
+const exposureRef = useExposure('expose_fund_card', { fundCode })
+<div ref={exposureRef}>...</div>
+```
+
+`threshold: 0.5` 表示元素露出 50% 才触发，可以根据业务需要调整。
+
+## 统一封装：批量上报和 sendBeacon
+
+每次操作都立刻发请求性能不好，改成批量发：
+
+```ts
+class Tracker {
+  private queue: TrackEvent[] = []
+  private timer: ReturnType<typeof setTimeout> | null = null
+
+  track(event: TrackEvent) {
+    this.queue.push({ ...event, ts: Date.now() })
+    this.scheduleFlush()
+  }
+
+  private scheduleFlush() {
+    if (this.timer) return
+    this.timer = setTimeout(() => this.flush(), 1000)  // 1s 批量发一次
+  }
+
+  private flush() {
+    if (!this.queue.length) return
+    const events = this.queue.splice(0)
+    this.timer = null
+    // 用 sendBeacon 保证页面关闭时也能发出
+    navigator.sendBeacon('/api/track', JSON.stringify(events))
+  }
+}
+```
+
+页面关闭时普通的 fetch/XHR 可能发不出去，`sendBeacon` 是专门为这种场景设计的，浏览器会保证在页面卸载时把请求发出。
+
+## 与业务代码解耦：自定义 Hook
+
+把 tracker 封装成 hook，业务代码不直接依赖上报实现：
+
+```ts
+const useTrack = () => {
+  const page = usePageName()  // 从路由获取页面名
+
+  return useCallback((event: string, params?: Record<string, unknown>) => {
+    tracker.track({ event, page, params })
+  }, [page])
+}
+
+// 业务组件里
+const track = useTrack()
+<button onClick={() => track('click_buy', { fundCode })}>买入</button>
+```
+
+## 踩过的坑
+
+**SPA 路由变化时的 PV 上报**：单页应用里页面切换不会重新加载，路由变了但 `pageshow` 事件不触发。需要监听路由变化事件来补上 PV 上报。React Router 里可以在 `useEffect` 里监听 `location` 变化。
+
+**曝光上报时序问题**：有时候组件挂载了但数据还没加载完，这时候上报的曝光可能携带的是空数据。我的处理是：等数据加载完成后再启动曝光监听，用 `enabled` 参数控制 observer 的启动时机。
+
+```ts
+const useExposure = (eventName: string, params?: Record<string, unknown>, enabled = true) => {
+  // 只有 enabled 为 true 时才开始监听
+  useEffect(() => {
+    if (!enabled) return
+    // ... 启动 observer
+  }, [enabled])
+}
+```

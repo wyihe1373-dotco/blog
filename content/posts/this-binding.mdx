@@ -1,0 +1,195 @@
+---
+title: "this 指向：不同场景下它到底是谁"
+description: "搞清楚 this 是我从 Vue 转 React 时的一道坎——箭头函数和普通函数的差异在 class 组件里被暴露得很彻底"
+date: "2025-12-10"
+tags: ["经典问题", "JavaScript"]
+---
+
+从 Vue 转到 React 之后，class 组件里的 `this` 问题把我搞了好几次。Vue 的选项式 API 里，`this` 基本指向组件实例，不用太操心。React class 组件就不一样了，事件处理函数里的 `this` 会丢失，必须手动 bind 或者用箭头函数。这才让我认真搞了一遍 `this` 的规则。
+
+## this 的本质
+
+`this` 不是在函数定义时决定的，而是在**调用时**决定的。谁调用它，`this` 就是谁——除了箭头函数例外。
+
+## 4 种绑定规则
+
+### 1. 默认绑定
+
+没有明确调用者，`this` 是全局对象（浏览器里是 `window`，严格模式下是 `undefined`）：
+
+```js
+function foo() {
+  console.log(this)
+}
+foo() // window（非严格模式）
+```
+
+### 2. 隐式绑定
+
+通过对象调用，`this` 是那个对象：
+
+```js
+const obj = {
+  name: 'wyh',
+  greet() {
+    console.log(this.name)
+  }
+}
+obj.greet() // 'wyh'
+
+// 陷阱：方法被赋值后调用，丢失绑定
+const fn = obj.greet
+fn()
+// 预期：'wyh'
+// 实际：undefined（非严格模式）或 TypeError: Cannot read properties of undefined (严格模式）
+```
+
+### 3. 显式绑定
+
+用 `call`、`apply`、`bind` 手动指定 `this`：
+
+```js
+function greet(greeting) {
+  console.log(`${greeting}, ${this.name}`)
+}
+
+const user = { name: 'wyh' }
+greet.call(user, 'Hello')    // Hello, wyh
+greet.apply(user, ['Hello']) // Hello, wyh
+
+const boundGreet = greet.bind(user)
+boundGreet('Hi') // Hi, wyh
+```
+
+`call` 和 `apply` 的区别只是传参方式，`bind` 返回一个新函数而不是立即执行。
+
+### 4. `new` 绑定
+
+用 `new` 调用构造函数时，`this` 指向新创建的对象（见原型链那篇）。
+
+## 箭头函数：没有自己的 this
+
+箭头函数没有 `this`，它用的是定义时外层的词法作用域的 `this`，而且不能被 `bind` 改变。
+
+```js
+const obj = {
+  name: 'wyh',
+  // 普通函数：this 是 obj
+  greet() {
+    setTimeout(function() {
+      console.log(this.name) // undefined，this 是 window
+    }, 0)
+  },
+  // 箭头函数：捕获外层 this
+  greetArrow() {
+    setTimeout(() => {
+      console.log(this.name) // 'wyh'，this 是 obj
+    }, 0)
+  }
+}
+```
+
+## class 组件里为什么要 bind
+
+这就是我在 React 里踩的坑：
+
+```jsx
+class Button extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = { count: 0 }
+  }
+
+  handleClick() {
+    // 点击按钮后，预期：this 是组件实例，可以读 this.state
+    // 实际：TypeError: Cannot read properties of undefined (reading 'state')
+    //       因为 this 是 undefined（严格模式下的默认绑定）
+    this.setState({ count: this.state.count + 1 })
+  }
+
+  render() {
+    return <button onClick={this.handleClick}>Click</button>
+  }
+}
+```
+
+`onClick={this.handleClick}` 相当于把函数引用赋值给了 DOM 事件，调用时 `this` 不再是组件实例。
+
+两种解决方案：
+
+```jsx
+// 方案1：constructor 里 bind
+constructor() {
+  this.handleClick = this.handleClick.bind(this)
+}
+
+// 方案2：用箭头函数（更常用）
+handleClick = () => {
+  console.log(this.state) // this 正确
+}
+```
+
+现在基本都用函数组件 + hooks，这个问题少了很多，但原理还是值得理解。
+
+## 优先级
+
+当多个规则同时出现时，优先级从高到低：
+
+**new 绑定 > 显式绑定 > 隐式绑定 > 默认绑定**
+
+```js
+function foo() {
+  this.value = 1
+}
+const obj = {}
+const boundFoo = foo.bind(obj)
+const instance = new boundFoo() // new 绑定赢了，this 是新对象，不是 obj
+```
+
+## 常见陷阱速查
+
+```js
+const obj = { name: 'wyh', greet() { console.log(this.name) } }
+
+// 陷阱1：解构方法后调用
+const { greet } = obj
+greet()
+// 预期：'wyh'
+// 实际：undefined（this 丢了，变成全局 / undefined）
+
+// 陷阱2：setTimeout 里的普通函数
+const timer = {
+  label: 'myTimer',
+  start() {
+    setTimeout(function() {
+      console.log(this.label)
+      // 预期：'myTimer'
+      // 实际：undefined（this 是 window，window.label 没有）
+    }, 0)
+  }
+}
+timer.start()
+
+// 修复：用箭头函数
+start() {
+  setTimeout(() => {
+    console.log(this.label)  // 'myTimer' ✓
+  }, 0)
+}
+
+// 陷阱3：数组方法里的回调（普通函数）
+const counter = {
+  count: 0,
+  add(arr) {
+    arr.forEach(function(n) {
+      this.count += n  // 预期：累加到 counter.count
+                       // 实际：this 是 undefined，直接报错
+    })
+  }
+}
+// 修复方式1：箭头函数
+arr.forEach((n) => { this.count += n })  // ✓
+
+// 修复方式2：传 thisArg
+arr.forEach(function(n) { this.count += n }, this)  // ✓
+```
