@@ -49,7 +49,7 @@ function createToast(message: string, type: 'success' | 'error' | 'info') {
   const app = createApp(ToastApp)
   app.mount(container)
 
-  // 2秒后自动销毁
+  // 2 秒后自动销毁
   setTimeout(() => {
     visible.value = false
     setTimeout(() => {
@@ -274,4 +274,3 @@ function useRequest<T>(fn: () => Promise<T>) {
 
 手写一遍的意义不是要在项目里用它，而是搞清楚「库帮你做了什么」。VueUse 的 `useFetch` 和 ahooks 的 `useRequest` 的核心就是上面这段逻辑，只是在此基础上加了缓存、防抖、轮询、竞态处理等更完整的功能。
 
-实际项目里如果已经引了这些库，直接用就好，没必要重复造轮子。但遇到问题排查的时候，知道内部怎么运作的人和不知道的人，差距很明显。
