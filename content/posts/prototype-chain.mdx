@@ -66,26 +66,89 @@ console.log(d instanceof Dog)               // true
 
 ## `class` 是语法糖
 
-ES6 的 `class` 语法更干净，但底层还是原型：
+ES6 的 `class` 语法更干净，但底层还是原型。`extends` 做了两件事：子类实例的 `__proto__` 指向父类实例，子类 `prototype` 的 `__proto__` 指向父类 `prototype`。
 
-```js
-class Animal {
-  constructor(name) {
-    this.name = name
-  }
-  speak() {
-    return `${this.name} speaks`
+**用法一：继承 Error，自定义业务错误类**
+
+项目里需要区分不同类型的错误，用自定义错误类 + `instanceof` 判断：
+
+```ts
+// 交易密码验证被取消时抛这个错误
+export class TradeTokenError extends Error {
+  readonly isTradeTokenError = true
+
+  constructor(message = 'Trade token cancelled') {
+    super(message)          // 调用 Error 构造函数，设置 message 和调用栈
+    this.name = 'TradeTokenError'
   }
 }
 
-class Dog extends Animal {
-  speak() {
-    return `${this.name} barks`
+// 提现提交失败
+export class WithdrawSubmitError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WithdrawSubmitError'
+  }
+}
+
+// 调用处：catch 里用 instanceof 分流
+try {
+  await submitWithdraw()
+} catch (err) {
+  if (err instanceof TradeTokenError) {
+    return  // 用户主动取消，不弹错误提示
+  }
+  if (err instanceof WithdrawSubmitError) {
+    toast.error(err.message)
   }
 }
 ```
 
-`extends` 做了两件事：子类实例的 `__proto__` 指向父类实例，子类 `prototype` 的 `__proto__` 指向父类 `prototype`。
+`instanceof TradeTokenError` 能识别是因为：`err.__proto__ === TradeTokenError.prototype`，原型链匹配成立。
+
+**用法二：基类抽取公共逻辑，子类各自实现差异**
+
+WebSocket 管理里，连接、断开、重连是所有 socket 共用的，放到基类；不同 socket 的初始化地址和订阅协议不同，放到子类：
+
+```ts
+// 基类：公共连接管理
+class Socket {
+  connect()    { /* 建立连接，通用逻辑 */ }
+  disconnect() { /* 断开连接 */ }
+  reconnect()  { /* 断线重连 */ }
+  send(msg)    { /* 发消息 */ }
+}
+
+// 子类：只实现自己的初始化和订阅协议
+class TextSocket extends Socket {
+  initSocket = async () => {
+    this.ctx.url = await getWsTextUrl()   // 行情文本 ws 地址
+    this.ctx.socket = new WebSocket(this.ctx.url)
+  }
+  subscribe(topics: string[])   { /* 订阅行情数据 */ }
+  unsubscribe(topics: string[]) { /* 取消订阅 */ }
+}
+
+class CspSocket extends Socket {
+  initSocket = async () => {
+    this.ctx.url = await getWsCspUrl()    // CSP 数据 ws 地址
+    this.ctx.socket = new WebSocket(this.ctx.url)
+  }
+  subscribe(topics: string[])   { /* 订阅 CSP 数据 */ }
+  unsubscribe(topics: string[]) { /* 取消订阅 */ }
+}
+
+export const textSocket = new TextSocket()
+export const cspSocket  = new CspSocket()
+
+// 两个实例调用 connect()，都走 Socket.prototype.connect
+// 原型链查找：textSocket.__proto__ === TextSocket.prototype
+//             TextSocket.prototype.__proto__ === Socket.prototype → 找到 connect
+textSocket.connect()
+cspSocket.connect()
+```
+
+公共方法写一次，所有子类通过原型链继承——这就是 class 继承的实际价值。
 
 ## 原型链查找过程
 
@@ -154,3 +217,104 @@ console.log({}.isAdmin)  // undefined  ← 正常了
 ## 平时注意
 
 不要直接给内置对象的原型加方法，比如 `Array.prototype.myMethod = ...`。虽然很方便，但一旦 polyfill 或第三方库也这么做，容易冲突。如果要扩展，继承一个新类或者写工具函数是更安全的做法。
+
+## 哪些场景会用到
+
+### 1. 自定义错误类
+
+捕获错误时需要区分类型，`instanceof` 走的就是原型链：
+
+```js
+class NetworkError extends Error {
+  constructor(message, statusCode) {
+    super(message)
+    this.name = 'NetworkError'
+    this.statusCode = statusCode
+  }
+}
+
+class AuthError extends NetworkError {
+  constructor(message) {
+    super(message, 401)
+    this.name = 'AuthError'
+  }
+}
+
+try {
+  throw new AuthError('token 过期')
+} catch (err) {
+  if (err instanceof AuthError) {
+    // 跳转登录
+  } else if (err instanceof NetworkError) {
+    // 通用网络错误提示
+  }
+}
+
+// instanceof 的工作原理：
+// err.__proto__ === AuthError.prototype          → true，匹配第一个
+// err.__proto__.__proto__ === NetworkError.prototype → true，也能匹配第二个
+// err.__proto__.__proto__.__proto__ === Error.prototype → true
+```
+
+所以 `instanceof AuthError` 为 true，`instanceof NetworkError` 也为 true，继承关系自动体现。
+
+### 2. `Object.create(null)` 创建无原型的纯净对象
+
+普通 `{}` 会继承 `Object.prototype`，有 `toString`、`hasOwnProperty` 等方法。把对象当字典用时，如果 key 恰好是 `constructor`、`toString` 这类名字，会产生冲突：
+
+```js
+const cache = {}
+cache['constructor'] = '某个值'
+console.log(cache.constructor)  // 预期：'某个值'
+                                 // 实际：function Object() {...}（Object.prototype.constructor）
+                                 // 被原型上的 constructor 覆盖了
+
+// 用 Object.create(null) 创建没有原型的对象
+const pureMap = Object.create(null)
+pureMap['constructor'] = '某个值'
+console.log(pureMap['constructor'])  // '某个值'，没有原型干扰
+console.log(pureMap.toString)        // undefined，没有继承任何方法
+```
+
+做缓存或者用对象当 Map 用时，`Object.create(null)` 比 `{}` 更干净。
+
+### 3. 理解 Vue 2 的 `$set` 为什么要单独调用
+
+Vue 2 的响应式是通过 `Object.defineProperty` 拦截属性，但它只能拦截**已存在**的属性。新增属性不会触发视图更新：
+
+```js
+// Vue 2 里这样写不生效
+this.obj.newKey = 'value'  // 不触发更新
+
+// 必须用 $set
+this.$set(this.obj, 'newKey', 'value')
+```
+
+`$set` 内部会手动触发依赖更新。理解了原型链和属性拦截机制，这个 "为什么要 $set" 就说得清了。Vue 3 改用 Proxy，可以拦截任意属性的增删，才不再需要 `$set`。
+
+### 4. `for...in` 会遍历原型链
+
+这是最常踩的坑。`for...in` 会把原型链上的可枚举属性也遍历出来：
+
+```js
+function Animal(name) { this.name = name }
+Animal.prototype.type = '动物'
+
+const dog = new Animal('旺财')
+
+for (const key in dog) {
+  console.log(key)
+  // 'name'  ← 自有属性
+  // 'type'  ← 原型链上的，不想要
+}
+
+// 只遍历自有属性：
+for (const key in dog) {
+  if (Object.hasOwn(dog, key)) {
+    console.log(key)  // 只输出 'name'
+  }
+}
+
+// 或者直接用 Object.keys()，只返回自有可枚举属性
+Object.keys(dog)  // ['name']
+```
