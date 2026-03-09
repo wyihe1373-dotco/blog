@@ -94,6 +94,47 @@ const FundCard = ({ fundCode }: { fundCode: string }) => {
 
 注意要尽量让骨架屏和真实内容的高度接近，避免出现骨架屏消失、真实内容撑开时的布局抖动（Layout Shift）。
 
+## 用 antd-mobile 的 Skeleton
+
+如果项目本身已经引入了 antd-mobile（H5 项目里很常见），直接用它的 Skeleton 组件省去自己写 shimmer 动画：
+
+```tsx
+import { Skeleton } from 'antd-mobile'
+
+// 标题占位
+<Skeleton.Title animated />
+
+// 段落占位（lineCount 控制行数）
+<Skeleton.Paragraph lineCount={3} animated />
+
+// 组合使用
+const FundDetailSkeleton = () => (
+  <div style={{ padding: 16 }}>
+    <Skeleton.Title animated />
+    <Skeleton.Paragraph lineCount={4} animated />
+  </div>
+)
+```
+
+结合接口状态切换：
+
+```tsx
+const FundDetail = ({ fundCode }: { fundCode: string }) => {
+  const { data, isLoading } = useFundDetail(fundCode)
+
+  if (isLoading) return <FundDetailSkeleton />
+
+  return (
+    <div>
+      <h2>{data.name}</h2>
+      <p>{data.desc}</p>
+    </div>
+  )
+}
+```
+
+antd-mobile 的 Skeleton 适合快速搭建，自定义骨架屏（需要和真实布局高度吻合）还是用 CSS-only 方案更灵活。
+
 ## 图片占位：避免图片加载时跳动
 
 图片加载前高度是 0，加载完突然撑高，整个页面向下跳动，体验很差。
@@ -146,9 +187,3 @@ const ProgressiveImage = ({ src, placeholder }: { src: string; placeholder: stri
   )
 }
 ```
-
-## 一个教训：骨架屏要和真实内容形状接近
-
-有一次做了个骨架屏，三行文字占位，结果真实数据只有一行，内容出来后高度直接从高变低，跳动反而比没有骨架屏更明显。
-
-现在的原则是：先确认真实内容的大致形状，再设计骨架屏。如果内容高度变化很大，宁愿用 loading，不要强行用骨架屏。

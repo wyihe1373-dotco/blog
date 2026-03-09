@@ -70,6 +70,32 @@ const formatted = records.map(record => ({
 
 相比 `forEach` 逐条 push，`map` 的意图更清晰：「我要把这个数组的每条数据都转成新形状」。
 
+### Fmt.date 的实现思路
+
+`Fmt.date` 的第一个参数类型是 `dayjs.ConfigType`，这是关键。dayjs 的 ConfigType 本身就支持多种输入：
+
+```js
+// 这几种写法都能正确解析
+WhaleSDK.Fmt.date(1703001600000)          // 毫秒时间戳
+WhaleSDK.Fmt.date(1703001600 * 1000)      // 秒级时间戳转毫秒（后端常见）
+WhaleSDK.Fmt.date(new Date())             // Date 对象
+WhaleSDK.Fmt.date('2023-12-20')           // 日期字符串
+WhaleSDK.Fmt.date('2023-12-20T08:00:00Z') // ISO 字符串
+
+// 第二个参数是预置格式名，而不是自己写 'YYYY/MM/DD HH:mm'
+WhaleSDK.Fmt.date(ts, 'date_simple')       // → '2023/12/20'
+WhaleSDK.Fmt.date(ts, 'date_time_simple')  // → '2023/12/20 08:00'
+WhaleSDK.Fmt.date(ts, 'date_short')        // → '2023年12月20日'（中文）/ 'Dec 20, 2023'（英文）
+```
+
+这样设计有两个好处：
+
+**第一，自动多语言。** 同一个 `'date_short'`，在中文环境输出 `2023年12月20日`，在英文环境输出 `Dec 20, 2023`，调用方不需要关心当前语言，也不需要为每种语言写不同的格式字符串。
+
+**第二，语义化格式名。** 自己写 `'YYYY/MM/DD HH:mm'` 需要记格式符，也不知道这个格式在不同语言下长什么样。用 `'date_time_simple'` 一看就知道是「简洁的日期+时间」，维护时更直观。
+
+在 `map` 里批量格式化的时候，好处更明显——每条记录都走同一套逻辑，格式统一、语言统一，不会出现某些记录格式不一样的情况。
+
 手机号脱敏也是类似的：
 
 ```js
