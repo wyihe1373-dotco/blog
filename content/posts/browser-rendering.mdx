@@ -77,7 +77,46 @@ Cache-Control: max-age=0
 - 强缓存（`Cache-Control: max-age`）：未过期直接用本地缓存，不发请求
 - 协商缓存（`ETag` / `Last-Modified`）：发请求，服务器返回 304 时用本地缓存
 
-这是前端能做的最简单高效的优化之一。
+**前端在代码层面能做什么？**
+
+核心思路是：**HTML 不能缓存太久，JS/CSS 可以永久缓存——但要配合文件名 hash。**
+
+HTML 每次都要让浏览器去服务器确认是否有更新，否则用户改不出来：
+
+```nginx
+# nginx 配置：HTML 不做强缓存
+location ~* \.html$ {
+  add_header Cache-Control "no-cache";
+}
+
+# JS/CSS/图片：可以缓存很久（1 年），因为文件名带 hash
+location ~* \.(js|css|png|woff2)$ {
+  add_header Cache-Control "max-age=31536000, immutable";
+}
+```
+
+**文件名 hash 是关键。** Vite 和 Next.js 默认就会在构建产物里加 hash：
+
+```
+# 构建输出示例
+dist/
+  index.html               ← 无 hash，每次访问都 no-cache 检查
+  assets/
+    index-DpAh3CqC.js      ← 带 hash，内容变了 hash 才变
+    index-BRsf3ySw.css     ← 同上
+```
+
+文件内容没变 → hash 不变 → URL 不变 → 浏览器直接命中强缓存，不发请求。
+文件内容改了 → hash 改变 → URL 改变 → 旧缓存自动失效，浏览器请求新文件。
+
+这样就解决了"缓存时间越长越好"和"要能及时更新"之间的矛盾。
+
+**协商缓存**由服务器（Nginx / CDN）自动处理，前端不需要手写。服务器在响应头里带 `ETag`，浏览器下次请求时自动带上 `If-None-Match`，内容没变服务器返回 304，浏览器用本地缓存——整个过程透明。
+
+在 Chrome DevTools → Network 面板，可以直观看到缓存效果：
+- `(memory cache)` / `(disk cache)`：命中强缓存，size 显示为缓存大小，time 接近 0ms
+- `304 Not Modified`：命中协商缓存，节省了传输体积
+- `200`：没有缓存，完整请求
 
 ---
 

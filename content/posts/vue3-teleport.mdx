@@ -1,0 +1,153 @@
+---
+title: "Vue 3 Teleport：弹窗不再受 z-index 嵌套限制"
+description: "fixed 定位的弹窗放在嵌套组件里经常出问题，Teleport 把渲染位置和逻辑位置分离，解决了这个问题"
+date: "2026-01-20"
+tags: ["学习笔记", "Vue 3"]
+---
+
+H5 项目里有一个经典问题：弹窗组件被放在某个有 `overflow: hidden` 或 `transform` 的祖先容器里，`position: fixed` 就失效了，弹窗要么被裁剪，要么位置偏移。
+
+Vue 3 的 Teleport 直接解决了这个问题——把组件的 **渲染位置** 和 **逻辑位置** 分开。
+
+## 问题根源
+
+正常情况下，组件在哪里写，就在哪里渲染。弹窗组件嵌套在深层组件里，它的 DOM 节点也在那个层级里：
+
+```
+#app
+└── PageLayout (overflow: hidden)
+    └── FundCard
+        └── Modal ← fixed 定位，但被 overflow:hidden 裁了
+```
+
+就算 Modal 写了 `position: fixed; z-index: 9999`，如果祖先有 `transform`，fixed 就相对于那个祖先而不是视口定位。
+
+## Teleport 的用法
+
+`<Teleport to="body">` 告诉 Vue：这段 DOM 渲染到 `body` 下面，但组件的响应式状态、事件绑定、props 仍然属于当前组件：
+
+```vue
+<template>
+  <button @click="show = true">打开弹窗</button>
+
+  <Teleport to="body">
+    <div v-if="show" class="modal-overlay" @click="show = false">
+      <div class="modal" @click.stop>
+        <h3>弹窗标题</h3>
+        <slot />
+        <button @click="show = false">关闭</button>
+      </div>
+    </div>
+  </Teleport>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+const show = ref(false)
+</script>
+```
+
+渲染结果：
+
+```html
+<!-- #app 里什么都没有 -->
+<div id="app">
+  <button>打开弹窗</button>
+</div>
+
+<!-- 弹窗直接挂到 body 下，不受任何祖先 CSS 影响 -->
+<body>
+  <div id="app">...</div>
+  <div class="modal-overlay">  <!-- ← Teleport 渲染到这里 -->
+    <div class="modal">...</div>
+  </div>
+</body>
+```
+
+## 项目里的实际用法
+
+在 app-spa 项目里，Popup、Drawer 这类弹出组件都用了 Teleport，并且把 `to` 目标暴露为 prop，方便在特殊场景切换：
+
+```vue
+<!-- Popup/index.vue -->
+<template>
+  <Teleport :to="teleport">
+    <Overlay :show="show" @click="handleClickOverlay" />
+    <Transition name="popup-slide">
+      <div v-show="show" class="lb-popup">
+        <h1 v-if="title" class="popup-title">{{ title }}</h1>
+        <slot />
+        <lb-icon v-if="showClose" name="times" @click="close" />
+      </div>
+    </Transition>
+  </Teleport>
+</template>
+
+<script>
+export default {
+  props: {
+    teleport: {
+      type: String,
+      default: 'body',  // 默认挂到 body，也可以传 '#app' 等
+    },
+  }
+}
+</script>
+```
+
+Drawer 组件是同样的结构。这样无论 Popup 被放在多深的组件树里，渲染出来的 DOM 都在 `body` 最顶层，`z-index` 管理简单很多。
+
+## disabled 属性：按需关闭传送
+
+有时候需要在特定容器里渲染（比如全屏预览时希望弹窗也在预览容器里），可以用 `disabled` 动态控制：
+
+```vue
+<Teleport to="body" :disabled="isFullscreen">
+  <Modal />
+</Teleport>
+```
+
+`disabled` 为 `true` 时，Teleport 不起作用，组件在原位渲染；为 `false` 时正常传送到 `body`。
+
+## 多个 Teleport 到同一目标
+
+同一个 `to` 目标可以有多个 Teleport，按顺序追加：
+
+```vue
+<!-- 两个弹窗都传送到 body，按渲染顺序排列 -->
+<Teleport to="body">
+  <Toast v-if="showToast" />
+</Teleport>
+
+<Teleport to="body">
+  <Dialog v-if="showDialog" />
+</Teleport>
+```
+
+这对 Toast + Dialog 同时存在的场景很有用，z-index 控制由自己的样式决定，不会互相干扰。
+
+## 和 fixed 定位的关系
+
+Teleport 解决的是 DOM 位置问题，`position: fixed` 依然是自己写的。两者配合：
+
+```css
+.modal-overlay {
+  position: fixed;
+  inset: 0;              /* top/right/bottom/left: 0 */
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  width: 80%;
+  max-width: 360px;
+}
+```
+
+Teleport 确保 DOM 在 `body` 下，`fixed` 的定位参照物就是视口，再不会被祖先的 `transform` 影响。
