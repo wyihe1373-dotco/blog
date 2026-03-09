@@ -20,10 +20,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
         </div>
         <Script
-          defer
-          src="https://blog-umami-analytics.vercel.app/script.js"
-          data-website-id="39e85bcb-69d6-4198-afe7-48d81a96d9aa"
           strategy="afterInteractive"
+          src="https://hm.baidu.com/hm.js?16e2a62400c5a575411d83203f8d24d3"
         />
       </body>
     </html>
