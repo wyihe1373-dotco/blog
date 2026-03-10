@@ -18,6 +18,9 @@ tags: ["经典问题", "性能优化"]
 **加载性能：**
 - Chrome DevTools → Network 面板，看 LCP 资源（最大内容绘制）是什么，有多大
 - Lighthouse 跑分，看 FCP / LCP / TBT 这几个指标
+  - **FCP**（First Contentful Paint）：首次内容绘制，浏览器渲染出第一个文字或图片的时间，衡量"用户多久能看到东西"
+  - **LCP**（Largest Contentful Paint）：最大内容绘制，视口内最大元素（通常是首屏图片或标题）完成渲染的时间，衡量"主要内容多久可见"，Google 核心性能指标，目标 < 2.5s
+  - **TBT**（Total Blocking Time）：总阻塞时间，FCP 到页面可交互之间，主线程被长任务（> 50ms）阻塞的时间之和，衡量"页面看起来加载了但点不动"的程度，目标 < 200ms
 - `web-vitals` 库埋点，线上真实用户数据比 Lighthouse 更有参考价值
 
 ```typescript
@@ -137,7 +140,7 @@ return (
 )
 ```
 
-只渲染可视区域内的 DOM，1000 条列表滑动依然 60fps。
+屏幕上能看到多少条就渲染多少条，滚动时动态替换，DOM 数量始终很少。1000 条数据滑起来和 10 条一样顺。
 
 ---
 

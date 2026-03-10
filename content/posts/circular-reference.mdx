@@ -29,6 +29,110 @@ node.self = node  // 指向自己
 
 ---
 
+## 实际开发里最常踩的几个场景
+
+### 树形数据加 parent 指针
+
+后端返回平铺的菜单数据，前端自己转成树形结构时，给每个节点加 `parent` 引用，方便向上查找：
+
+```javascript
+function buildTree(list) {
+  const map = {}
+  list.forEach(item => (map[item.id] = { ...item, children: [] }))
+
+  const roots = []
+  list.forEach(item => {
+    const node = map[item.id]
+    if (item.parentId) {
+      const parent = map[item.parentId]
+      node.parent = parent           // ← 子节点持有父节点引用
+      parent.children.push(node)     // ← 父节点也持有子节点引用
+    } else {
+      roots.push(node)
+    }
+  })
+  return roots
+}
+
+const tree = buildTree(menuList)
+
+// 之后想把当前选中的菜单存到 Pinia / localStorage
+JSON.stringify(tree)  // ❌ 报错：Converting circular structure to JSON
+```
+
+改法：需要序列化时不存 `parent`，只存 `id`，用的时候再查 map：
+
+```javascript
+node.parentId = item.parentId  // 只存 id，不存对象引用
+```
+
+### Pinia store 互相引用（ES 模块循环依赖）
+
+Store A 用到 Store B 的状态，Store B 又 import 了 Store A，形成循环依赖，运行时一个 store 会拿到 `undefined`：
+
+```javascript
+// stores/user.js
+import { usePermissionStore } from './permission'  // ← 引用 permission
+
+export const useUserStore = defineStore('user', () => {
+  function logout() {
+    usePermissionStore().reset()
+  }
+})
+
+// stores/permission.js
+import { useUserStore } from './user'  // ← 引用 user，形成循环
+
+export const usePermissionStore = defineStore('permission', () => {
+  const user = useUserStore()  // 这里可能拿到 undefined
+})
+```
+
+改法：在函数体内调用另一个 store（而不是在模块顶层 import 后立即初始化），Pinia 支持在 action 里延迟获取：
+
+```javascript
+// stores/permission.js — 不在顶层初始化，在需要时才调用
+export const usePermissionStore = defineStore('permission', () => {
+  function checkRole(role) {
+    const userStore = useUserStore()  // 在函数里调用，避免循环初始化
+    return userStore.roles.includes(role)
+  }
+})
+```
+
+### Vue reactive 存了 DOM 元素
+
+把 DOM 元素存进 `reactive` 对象，Vue 会对它做深层代理，而 DOM 元素内部持有大量循环引用（`element.ownerDocument.defaultView` 之类），代理过程可能抛错或造成内存不释放：
+
+```javascript
+// ❌ 不要这样做
+const state = reactive({
+  containerEl: document.getElementById('container'),  // DOM 存进了响应式对象
+  data: []
+})
+
+// ✅ DOM 引用用 ref，不走深层响应式
+const containerEl = ref(null)  // template ref
+const state = reactive({ data: [] })
+```
+
+### WebSocket / postMessage 传循环引用对象
+
+给 WebSocket 或 `postMessage` 发消息时，内部会调用结构化克隆算法（Structured Clone），同样不支持循环引用：
+
+```javascript
+const payload = { type: 'UPDATE', node: currentNode }
+// 如果 currentNode 里有 parent 指针
+ws.send(JSON.stringify(payload))   // ❌ 循环引用报错
+window.postMessage(payload, '*')   // ❌ DataCloneError
+
+// 发送前先剔除循环引用字段
+const { parent, children, ...safeNode } = currentNode
+ws.send(JSON.stringify({ type: 'UPDATE', node: safeNode }))
+```
+
+---
+
 ## 会引发什么问题
 
 ### 1. JSON.stringify 直接报错
