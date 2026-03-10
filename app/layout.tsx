@@ -20,8 +20,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
         </div>
         <Script
+          defer
+          src="https://static.cloudflareinsights.com/beacon.min.js"
+          data-cf-beacon='{"token": "90f1971fc9ae4053b8bf0751f1b4d697"}'
           strategy="afterInteractive"
-          src="https://hm.baidu.com/hm.js?16e2a62400c5a575411d83203f8d24d3"
         />
       </body>
     </html>
