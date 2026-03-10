@@ -163,3 +163,128 @@ npm run dev -- --host 0.0.0.0
 ```
 
 手机浏览器直接访问那个 IP，实时预览，热更新也能用。
+
+## 本地 Mock
+
+后端接口没好、或者想在本地稳定复现某种数据，都需要 mock。下面几种方式按场景选。
+
+### 最轻量：直接在请求层拦截
+
+在 axios 封装里加一个开关，开发环境直接 return 假数据，不用额外依赖：
+
+```js
+// src/api/request.js
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
+
+export async function getFundList(params) {
+  if (USE_MOCK) {
+    return {
+      code: 0,
+      data: [
+        { id: 'fund_001', name: '沪深 300', nav: 1.234 },
+        { id: 'fund_002', name: '纳指 ETF', nav: 2.567 },
+      ],
+    }
+  }
+  return request.get('/api/fund/list', { params })
+}
+```
+
+`.env.local` 里加 `VITE_USE_MOCK=true`，不提交 git，只在本地生效。
+
+### 拦截所有请求：axios 拦截器 + mock 映射
+
+接口多的时候，在拦截器里统一处理，避免每个方法都加判断：
+
+```js
+// src/mock/data.js
+export const mockMap = {
+  'GET /api/fund/list': { code: 0, data: [/*...*/] },
+  'POST /api/fund/buy': { code: 0, msg: '申购成功' },
+}
+
+// src/api/request.js
+import axios from 'axios'
+import { mockMap } from '@/mock/data'
+
+const isDev = import.meta.env.DEV
+
+const instance = axios.create({ baseURL: '/api' })
+
+instance.interceptors.request.use(config => {
+  if (isDev) {
+    const key = `${config.method?.toUpperCase()} ${config.url}`
+    if (mockMap[key]) {
+      // 取消真实请求，直接返回 mock 数据
+      config.adapter = () =>
+        Promise.resolve({ data: mockMap[key], status: 200, config })
+    }
+  }
+  return config
+})
+```
+
+新增 mock 数据只改 `mockMap`，不动请求层逻辑。
+
+### 需要模拟延迟 / 错误状态
+
+测试 loading 态、错误页面时，加个 delay 和随机错误：
+
+```js
+function mockAdapter(data, { delay = 300, errorRate = 0 } = {}) {
+  return () =>
+    new Promise((resolve, reject) => {
+      setTimeout(() => {
+        if (Math.random() < errorRate) {
+          reject({ response: { status: 500, data: { code: 500, msg: '服务器异常' } } })
+        } else {
+          resolve({ data, status: 200 })
+        }
+      }, delay)
+    })
+}
+
+// 使用
+config.adapter = mockAdapter({ code: 0, data: [] }, { delay: 800, errorRate: 0.3 })
+```
+
+30% 概率返回 500，方便测试错误处理逻辑是否正常。
+
+### 推荐工具：MSW（Mock Service Worker）
+
+以上方案都是在应用代码里 mock，会污染业务逻辑。MSW 在 Service Worker 层拦截，应用代码完全不感知：
+
+```bash
+npm install msw --save-dev
+npx msw init public/  # 生成 mockServiceWorker.js
+```
+
+```js
+// src/mock/handlers.js
+import { http, HttpResponse } from 'msw'
+
+export const handlers = [
+  http.get('/api/fund/list', () => {
+    return HttpResponse.json({
+      code: 0,
+      data: [{ id: 'fund_001', name: '沪深 300', nav: 1.234 }],
+    })
+  }),
+  http.post('/api/fund/buy', async ({ request }) => {
+    const body = await request.json()
+    return HttpResponse.json({ code: 0, msg: `申购 ${body.fundId} 成功` })
+  }),
+]
+
+// src/main.js
+async function enableMocking() {
+  if (import.meta.env.DEV) {
+    const { worker } = await import('./mock/browser')
+    await worker.start({ onUnhandledRequest: 'bypass' })
+  }
+}
+
+enableMocking().then(() => createApp(App).mount('#app'))
+```
+
+好处是 Network 面板里能看到这些请求（标记为 `from ServiceWorker`），和真实请求体验一致，切换到真实接口只需要停掉 worker，不改业务代码。
