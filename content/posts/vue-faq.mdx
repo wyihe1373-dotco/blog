@@ -1,0 +1,218 @@
+---
+title: "Vue 开发里那些让我想了挺久的问题"
+description: "v-if/v-show、computed/watch、ref/reactive、组件通信——不是答案，是真的弄明白之后才理解的东西"
+date: "2026-02-10"
+tags: ["Vue", "经典问题", "学习笔记"]
+---
+
+写 Vue 有一段时间了，但有些东西用了很久才真正想清楚。不是不会用，是说不清楚为什么要这么用，或者遇到边界情况就懵。记录一下那些想清楚之后觉得豁然开朗的点。
+
+---
+
+## v-if 和 v-show，我一开始以为是一样的
+
+早期写 Vue 的时候，我基本上随手用 `v-if`，因为看起来更"语义化"。后来有个弹窗，每次打开都要重新初始化动画，改成 `v-show` 之后就好了，才意识到两者的本质差异。
+
+`v-if` 是真的"不渲染"——条件为 false 时，DOM 根本不存在，组件也没有生命周期。`v-show` 是渲染了但藏起来，`display: none` 而已，组件一直活着。
+
+```vue
+<!-- 弹窗每次打开都要播动画 → 组件需要一直存在 → v-show -->
+<AnimatedModal v-show="isOpen" />
+
+<!-- 没权限的功能区域，用户根本不需要加载 → v-if -->
+<AdminPanel v-if="user.isAdmin" />
+```
+
+有一个坑：`v-if` 的优先级高于 `v-for`，所以不要在同一个元素上同时写，会导致每条数据都先跑 `v-if` 判断。
+
+```vue
+<!-- ❌ 每次循环都判断一遍 status，多余 -->
+<li v-for="item in list" v-if="item.status === 'active'">{{ item.name }}</li>
+
+<!-- ✅ 先过滤，v-for 只渲染需要的 -->
+<li v-for="item in activeList">{{ item.name }}</li>
+```
+
+---
+
+## computed、watch、watchEffect 各自的位置
+
+这三个我之前老是搞混，后来用一句话记住：
+
+- **`computed`**：我要一个值，它由其他数据计算出来
+- **`watch`**：某个数据变了，我要做件事
+- **`watchEffect`**：我要做件事，但它依赖哪些数据我懒得想，让 Vue 自己发现
+
+**`computed` 有缓存，这是它最大的意义。**
+
+```vue
+<script setup>
+const list = ref([...])  // 几百条数据
+
+// ❌ 方法没有缓存，模板每次渲染都重新过滤
+function getActiveList() {
+  return list.value.filter(item => item.active)
+}
+
+// ✅ computed 有缓存，list 不变就不重算
+const activeList = computed(() => list.value.filter(item => item.active))
+</script>
+```
+
+**`watch` 能拿到新旧值，也能做异步，这是它的优势。**
+
+```vue
+<script setup>
+const keyword = ref('')
+const results = ref([])
+
+watch(keyword, async (newVal, oldVal) => {
+  if (newVal === oldVal || !newVal) return
+  results.value = await searchApi(newVal)
+}, { immediate: false })
+</script>
+```
+
+`watchEffect` 我用得最少，但有时候很方便——比如初始化就要跑一次，而且依赖的东西比较多：
+
+```vue
+watchEffect(async () => {
+  // userId 或 page 任一变化，都会重新请求
+  // 不需要手动写 watch([userId, page], ...)
+  data.value = await fetchList(userId.value, page.value)
+})
+```
+
+---
+
+## ref 和 reactive 我后来统一用 ref 了
+
+这两个其实都能用，主要是 `reactive` 有个坑让我踩了一次：**解构会破坏响应式。**
+
+```js
+const state = reactive({ count: 0, name: 'vue' })
+
+// ❌ 解构之后 count 就是普通变量，改了也不会更新视图
+const { count } = state
+count++
+
+// ✅ 要用就用 toRefs
+const { count } = toRefs(state)
+count.value++
+```
+
+踩过这个坑之后，我在新代码里基本都用 `ref`，统一 `.value`，逻辑更一致，不需要记"这个用 `reactive` 要不要 `.value`"。
+
+表单这种多字段场景有时候还是会用 `reactive`，因为不需要到处写 `.value`：
+
+```js
+const form = reactive({
+  username: '',
+  password: '',
+  rememberMe: false,
+})
+
+// 直接 form.username 就行，不用 form.value.username
+```
+
+---
+
+## 组件通信
+
+**父子之间：props 往下、emit 往上**，这个最基本没什么说的。
+
+Vue 3 的 `defineProps` 和 `defineEmits` 支持泛型，类型很清晰：
+
+```vue
+<script setup lang="ts">
+const props = defineProps<{
+  title: string
+  list: Item[]
+}>()
+
+const emit = defineEmits<{
+  select: [item: Item]
+  close: []
+}>()
+</script>
+```
+
+**跨多层的情况：provide / inject**
+
+项目里有个场景：页面级的 layout 组件管主题色，里面嵌了很多层子组件，最深层的按钮需要读主题。一层层 props 传太麻烦，用 provide / inject 直接打通：
+
+```vue
+<!-- 祖先 -->
+<script setup>
+const theme = ref('dark')
+provide('theme', readonly(theme))         // readonly 防止子组件直接改
+provide('setTheme', (t) => theme.value = t)
+</script>
+
+<!-- 任意后代 -->
+<script setup>
+const theme = inject('theme')
+const setTheme = inject('setTheme')
+</script>
+```
+
+**跨页面的全局状态：Pinia**
+
+Pinia 替代了 Vuex，写起来更接近 `script setup` 的风格：
+
+```js
+// stores/user.js
+export const useUserStore = defineStore('user', () => {
+  const info = ref(null)
+  const isLogin = computed(() => !!info.value)
+
+  async function fetchUserInfo() {
+    info.value = await userApi.getInfo()
+  }
+
+  return { info, isLogin, fetchUserInfo }
+})
+```
+
+---
+
+## nextTick：数据改了，DOM 还没变
+
+Vue 的 DOM 更新是异步的，数据改了不会立刻反映到 DOM 上。这个我第一次遇到时觉得很奇怪——明明 `list.push` 了，为什么立刻读不到最新的 scrollHeight？
+
+```vue
+<script setup>
+const list = ref([])
+const listEl = ref(null)
+
+async function addAndScroll() {
+  list.value.push('新消息')
+
+  // 这里 DOM 还没更新，读到的还是旧高度
+  // listEl.value.scrollTop = listEl.value.scrollHeight  ❌
+
+  await nextTick()  // 等 DOM 更新完
+
+  // 现在读到的是最新的
+  listEl.value.scrollTop = listEl.value.scrollHeight  // ✅
+}
+</script>
+```
+
+消息列表自动滚底就是这个场景。加了 `nextTick` 之后就正常了。
+
+---
+
+## key：不只是"循环要加"
+
+`key` 帮 Vue 追踪每个节点，用 `index` 做 key 在列表顺序会变的情况下会出问题——Vue 会复用位置上的节点而不是跟着数据走。
+
+但 `key` 还有个我用得很多的技巧：**强制重新挂载组件**。
+
+```vue
+<!-- userId 变了，key 变了，整个组件销毁重建，内部状态全部重置 -->
+<!-- 比手动 reset 所有状态省事太多 -->
+<UserDetailPanel :key="userId" :userId="userId" />
+```
+
+用户切换、表单重置、分页数据替换——遇到"我要这个组件重新初始化"的场景，改一下 `key` 往往是最简单的解法。

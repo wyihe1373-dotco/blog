@@ -84,6 +84,230 @@ ESLint 和 Prettier 一起用，要装 `eslint-config-prettier` 来关掉 ESLint
 
 ---
 
+## Vite 常用插件一览
+
+### 插件是什么
+
+Vite 插件本质是一个**对象**，里面挂着一些钩子函数。Vite 在构建的不同阶段会依次调用这些钩子，插件通过钩子介入构建过程、改变行为。
+
+```js
+// 一个最简单的插件长这样
+const myPlugin = {
+  name: 'my-plugin',
+
+  // 钩子：转换某类文件的内容
+  transform(code, id) {
+    if (!id.endsWith('.vue')) return  // 只处理 .vue 文件
+    return code.replace('__VERSION__', '1.0.0')  // 改写源码
+  },
+
+  // 钩子：构建完成后执行
+  closeBundle() {
+    console.log('打包完成')
+  }
+}
+
+export default defineConfig({
+  plugins: [myPlugin]
+})
+```
+
+常见的钩子：
+
+| 钩子 | 触发时机 |
+|------|----------|
+| `resolveId` | 解析模块路径时（可以拦截 import、改写路径） |
+| `load` | 加载模块内容时（可以返回虚拟文件内容） |
+| `transform` | 转换文件内容时（可以改写源码，JSX → JS 就是这里做的） |
+| `buildStart` | 构建开始 |
+| `closeBundle` | 构建结束 |
+| `configureServer` | 开发服务器启动时（可以加中间件、自定义路由） |
+
+所以 `@vitejs/plugin-react` 干的事就是：在 `transform` 钩子里把 JSX 转成 `React.createElement` 调用，同时注入 Fast Refresh 的 HMR 代码。本质不神秘，就是个对象。
+
+---
+
+搭项目时经常要装一堆插件，不知道该用哪个，按场景分类会清楚很多：
+
+**框架支持**
+
+| 插件 | 用途 |
+|------|------|
+| `@vitejs/plugin-react` | React 项目必装，处理 JSX + Fast Refresh 热更新 |
+| `@vitejs/plugin-vue` | Vue 项目必装，处理 `.vue` 单文件组件 |
+| `@vitejs/plugin-vue-jsx` | Vue 项目里写 JSX/TSX |
+
+**开发体验**
+
+| 插件 | 用途 |
+|------|------|
+| `unplugin-auto-import` | 自动导入 API，省掉 `import { ref, computed } from 'vue'` |
+| `unplugin-vue-components` | 自动导入 Vue 组件，省掉手写 `import MyButton from '...'` |
+| `vite-plugin-mock` | 开发环境拦截请求返回 mock 数据，不动业务代码 |
+| `vite-plugin-svgr` | SVG 文件直接当 React 组件用：`import Icon from './icon.svg'` |
+
+**构建优化**
+
+| 插件 | 用途 |
+|------|------|
+| `rollup-plugin-visualizer` | 打包体积可视化，找出哪个包最大 |
+| `vite-plugin-compression` | 构建时生成 `.gz` / `.br`，配合 Nginx 静态压缩 |
+| `@vitejs/plugin-legacy` | 兼容旧浏览器，生成 legacy bundle + polyfill |
+
+**其他**
+
+| 插件 | 用途 |
+|------|------|
+| `vite-plugin-pwa` | 一键配置 PWA，让网页可以安装到桌面 |
+| `vite-plugin-checker` | 开发时实时显示 TS / ESLint 报错，不用等终端 |
+
+> 更多插件可以看 [awesome-vite](https://github.com/vitejs/awesome-vite)，按分类整理的，找需求直接搜。
+
+**最常用的三个**详细说一下：
+
+**`unplugin-auto-import`** — 省掉大量 import 语句：
+
+```js
+// vite.config.ts
+import AutoImport from 'unplugin-auto-import/vite'
+
+plugins: [
+  AutoImport({
+    imports: ['vue', 'vue-router', 'pinia'],  // 自动导入这些库的 API
+    dts: 'src/auto-imports.d.ts',             // 生成类型声明文件，TS 不报错
+  })
+]
+
+// 组件里不用写 import，直接用
+const count = ref(0)
+const route = useRoute()
+```
+
+**`rollup-plugin-visualizer`** — 分析打包体积，找出哪里可以优化：
+
+```js
+import { visualizer } from 'rollup-plugin-visualizer'
+
+plugins: [
+  visualizer({
+    open: true,       // 构建完自动打开浏览器
+    filename: 'dist/stats.html',
+    gzipSize: true,   // 同时显示 gzip 后的大小
+  })
+]
+// 跑完 vite build，会自动打开一个树形图，每个模块占多少体积一目了然
+```
+
+**`vite-plugin-compression`** — 让静态资源更小：
+
+```js
+import compression from 'vite-plugin-compression'
+
+plugins: [
+  compression({ algorithm: 'gzip' }),    // 生成 .gz 文件
+  compression({ algorithm: 'brotliCompress' }),  // 同时生成 .br 文件（更小）
+]
+// 配合 Nginx：gzip_static on; 直接返回预压缩文件，不用每次动态压缩
+```
+
+---
+
+### 自己写插件：从 0 开始
+
+自己写插件的场景不多，但遇到"现有插件都不满足、逻辑又不复杂"时，写一个比引入依赖更划算。
+
+**最常见的几种自定义需求：**
+
+**1. 构建时往 HTML 注入内容**（比如版本号、环境标识）
+
+```js
+// plugins/inject-build-info.js
+export function injectBuildInfo() {
+  return {
+    name: 'inject-build-info',
+    transformIndexHtml(html) {
+      const info = `
+        <!-- build: ${new Date().toISOString()} -->
+        <!-- version: ${process.env.npm_package_version} -->
+      `
+      return html.replace('</head>', `${info}</head>`)
+    }
+  }
+}
+
+// vite.config.ts
+import { injectBuildInfo } from './plugins/inject-build-info'
+plugins: [injectBuildInfo()]
+```
+
+**2. 给特定文件自动追加内容**（比如每个 `.vue` 文件末尾加 scoped 样式）
+
+```js
+export function appendStyle(styleContent) {
+  return {
+    name: 'append-style',
+    transform(code, id) {
+      if (!id.endsWith('.vue')) return  // 只处理 vue 文件
+      return code + `\n<style scoped>\n${styleContent}\n</style>`
+    }
+  }
+}
+```
+
+**3. 开发服务器加自定义接口**（比如本地读文件、模拟 SSE）
+
+```js
+export function mockSsePlugin() {
+  return {
+    name: 'mock-sse',
+    configureServer(server) {
+      server.middlewares.use('/mock/sse', (req, res) => {
+        res.setHeader('Content-Type', 'text/event-stream')
+        res.setHeader('Cache-Control', 'no-cache')
+
+        let count = 0
+        const timer = setInterval(() => {
+          res.write(`data: ${JSON.stringify({ count: count++ })}\n\n`)
+          if (count > 5) {
+            clearInterval(timer)
+            res.end()
+          }
+        }, 1000)
+
+        req.on('close', () => clearInterval(timer))
+      })
+    }
+  }
+}
+```
+
+**4. 构建结束后执行脚本**（比如自动上传 sourcemap 到错误监控平台）
+
+```js
+export function uploadSourcemap(options) {
+  return {
+    name: 'upload-sourcemap',
+    async closeBundle() {
+      if (process.env.NODE_ENV !== 'production') return
+      console.log('上传 sourcemap...')
+      // await uploadToSentry(options)
+    }
+  }
+}
+```
+
+**从 0 写的步骤：**
+
+1. 在 `plugins/` 目录新建一个 `.js` 文件
+2. 导出一个返回插件对象的函数（方便传配置参数）
+3. 根据需求选合适的钩子（见上面的钩子表格）
+4. 在 `vite.config.ts` 里引入并加进 `plugins` 数组
+5. 跑一下 `vite dev` 或 `vite build` 验证效果
+
+不需要发 npm 包，直接放项目里用就行。
+
+---
+
 ## Vite 配置常用部分
 
 ```typescript

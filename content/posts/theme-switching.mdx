@@ -1,0 +1,153 @@
+---
+title: "H5 主题切换的实现思路"
+description: "CSS 变量全局访问 + Pinia 存状态，实现运行时切换主题——不刷页面，不重载组件"
+date: "2026-03-10"
+tags: ["Vue", "CSS", "工程化"]
+---
+
+主题切换的需求很常见：品牌色、深色模式、多套皮肤。做过一次之后发现核心思路就一个——**把所有跟主题有关的样式值，抽成 CSS 变量放在最外层，切换主题只改变量，不动组件**。
+
+---
+
+## 核心思路
+
+CSS 变量（`--var-name`）定义在 `:root` 上，整棵 DOM 树都能访问，这就是「全局访问」的核心。
+
+```css
+/* 默认主题 */
+:root {
+  --color-primary: #1677ff;
+  --color-bg: #ffffff;
+  --color-text: #1a1a1a;
+  --color-border: #e8e8e8;
+}
+
+/* 深色主题 */
+:root[data-theme="dark"] {
+  --color-primary: #4096ff;
+  --color-bg: #141414;
+  --color-text: #ffffffd9;
+  --color-border: #303030;
+}
+```
+
+组件里只用变量，不写死颜色值：
+
+```css
+.card {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+```
+
+切换主题时，只需要改 `html` 或 `body` 的 `data-theme` 属性，所有用了 CSS 变量的组件瞬间跟着变，不需要重新渲染，不需要传 props。
+
+---
+
+## Pinia 管全局状态
+
+用 Pinia 存当前主题，所有组件都能读，也都能改：
+
+```ts
+// stores/theme.ts
+import { defineStore } from 'pinia'
+
+type Theme = 'light' | 'dark' | 'brand'
+
+export const useThemeStore = defineStore('theme', () => {
+  const theme = ref<Theme>('light')
+
+  function setTheme(t: Theme) {
+    theme.value = t
+    document.documentElement.setAttribute('data-theme', t)
+    localStorage.setItem('theme', t)  // 持久化
+  }
+
+  function initTheme() {
+    const saved = localStorage.getItem('theme') as Theme | null
+    setTheme(saved || 'light')
+  }
+
+  return { theme, setTheme, initTheme }
+})
+```
+
+在 App.vue 里初始化一次：
+
+```vue
+<script setup>
+const themeStore = useThemeStore()
+onMounted(() => themeStore.initTheme())
+</script>
+```
+
+任意组件切换主题，只需要：
+
+```vue
+<script setup>
+const themeStore = useThemeStore()
+</script>
+
+<template>
+  <button @click="themeStore.setTheme('dark')">深色</button>
+  <button @click="themeStore.setTheme('light')">浅色</button>
+</template>
+```
+
+---
+
+## 多套品牌主题
+
+如果要支持不止两套（比如不同品牌皮肤），CSS 变量按 `data-theme` 值分别定义：
+
+```css
+:root[data-theme="brand-a"] {
+  --color-primary: #ff6b35;
+  --color-bg: #fff8f5;
+}
+
+:root[data-theme="brand-b"] {
+  --color-primary: #6c5ce7;
+  --color-bg: #f8f7ff;
+}
+```
+
+切换时传不同的 theme 值就行，组件代码完全不用动。
+
+---
+
+## 为什么不用 class 方案
+
+也有另一种方案：在 `html` 上切换 class（`.dark`、`.light`），然后在 CSS 里写 `.dark .card { ... }`。
+
+两种方案都可以，但 CSS 变量方案优势更明显：
+
+- **作用域更干净**：变量统一定义在 `:root`，不需要每个组件都写 `.dark .component` 这样的后代选择器
+- **和 JS 互通**：`getComputedStyle(el).getPropertyValue('--color-primary')` 可以读到值，方便动态计算（比如图表取主色）
+- **浏览器支持**：主流 H5 场景（iOS 10+、Android 5+）都支持，不用考虑兼容
+
+---
+
+## 和 Tailwind 配合
+
+项目里用 Tailwind 的话，`tailwind.config.js` 可以直接引用 CSS 变量：
+
+```js
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        primary: 'var(--color-primary)',
+        bg: 'var(--color-bg)',
+      }
+    }
+  }
+}
+```
+
+这样 `bg-bg`、`text-primary` 这些 Tailwind 类也跟着主题走。
+
+---
+
+整体下来代码量很少：`stores/theme.ts` 管状态和 DOM 操作，CSS 文件里定义各套主题的变量值，组件只用变量。新增一套主题，只需要加一段 CSS，不碰任何 Vue 组件。
