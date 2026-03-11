@@ -56,7 +56,7 @@ function Scene({ isMobile }: { isMobile: boolean }) {
         <meshPhongMaterial
           map={colorMap}
           shininess={15}
-          specular={new THREE.Color(0x222222)}
+          specular={0x222222}
         />
       </mesh>
 
