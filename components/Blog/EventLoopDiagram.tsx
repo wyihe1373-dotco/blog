@@ -1,159 +1,254 @@
 'use client'
 
-import { motion, useAnimationControls } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useEffect, useState, useCallback } from 'react'
 
 const STEPS = [
-  { id: 'sync',   label: '① 执行同步代码', target: 'stack',    desc: '调用栈逐帧出栈，直到清空' },
-  { id: 'micro',  label: '② 清空微任务',   target: 'micro',    desc: 'Promise / async / queueMicrotask 全部跑完' },
-  { id: 'macro',  label: '③ 取一个宏任务', target: 'macro',    desc: 'setTimeout / DOM 事件 / 网络回调 各取一个' },
-  { id: 'repeat', label: '④ 循环',         target: 'loop',     desc: '回到 ①，继续下一轮' },
+  {
+    id: 'sync',
+    label: '① 执行同步代码',
+    target: 'stack' as const,
+    desc: '主线程逐行执行，函数调用依次入栈、出栈。调用栈清空前，任何队列里的任务都不会执行。',
+    arrow: null,
+  },
+  {
+    id: 'micro',
+    label: '② 清空微任务',
+    target: 'micro' as const,
+    desc: '调用栈空了，大堂经理优先处理 VIP 窗口——把所有微任务全部跑完，一个不剩，才进行下一步。',
+    arrow: 'micro→stack' as const,
+  },
+  {
+    id: 'macro',
+    label: '③ 取一个宏任务',
+    target: 'macro' as const,
+    desc: '微任务清空后，从普通出餐口取出一个宏任务交给主线程执行。注意：每次只取一个，执行完再回到 ②。',
+    arrow: 'macro→stack' as const,
+  },
+  {
+    id: 'repeat',
+    label: '④ 重复循环',
+    target: 'loop' as const,
+    desc: '宏任务执行完毕后，再次检查微任务队列……如此往复，永不停止。这就是"事件循环"名字的由来。',
+    arrow: null,
+  },
 ]
 
-const MICRO_ITEMS = ['Promise.then', 'async/await', 'queueMicrotask', 'MutationObserver']
-const MACRO_ITEMS = ['setTimeout', 'setInterval', 'DOM 事件回调', 'fetch 回调']
-const STACK_ITEMS = ['fn3()', 'fn2()', 'fn1()', '(global)']
+const MICRO_ITEMS = [
+  { label: 'Promise.then', note: '最常见' },
+  { label: 'async/await', note: '语法糖' },
+  { label: 'queueMicrotask', note: '手动入队' },
+  { label: 'MutationObserver', note: 'DOM 变化' },
+]
+
+const MACRO_ITEMS = [
+  { label: 'setTimeout', note: '延时执行' },
+  { label: 'setInterval', note: '定时执行' },
+  { label: 'DOM 事件回调', note: '点击/输入' },
+  { label: 'fetch 回调', note: '网络请求' },
+]
+
+const STACK_ITEMS = [
+  { label: 'fn3()', note: '栈顶' },
+  { label: 'fn2()', note: '' },
+  { label: 'fn1()', note: '' },
+  { label: '(global)', note: '栈底' },
+]
 
 export default function EventLoopDiagram() {
   const [step, setStep] = useState(0)
-  const [running, setRunning] = useState(true)
-  const loopCtrl = useAnimationControls()
+  const [running, setRunning] = useState(false)  // 默认暂停，让用户主动探索
+
+  const next = useCallback(() => setStep(s => (s + 1) % STEPS.length), [])
+  const prev = useCallback(() => setStep(s => (s - 1 + STEPS.length) % STEPS.length), [])
 
   useEffect(() => {
     if (!running) return
-    const timer = setInterval(() => {
-      setStep(s => (s + 1) % STEPS.length)
-    }, 1800)
+    const timer = setInterval(next, 3000)
     return () => clearInterval(timer)
-  }, [running])
-
-  useEffect(() => {
-    if (STEPS[step].target === 'loop') {
-      loopCtrl.start({ rotate: [0, 360], transition: { duration: 0.6, ease: 'easeInOut' } })
-    }
-  }, [step, loopCtrl])
+  }, [running, next])
 
   const active = STEPS[step].target
+  const currentStep = STEPS[step]
 
   return (
-    <div
-      className="my-6 rounded-xl border border-white/10 bg-[rgba(10,10,25,0.9)] p-5 select-none"
-      onClick={() => setRunning(r => !r)}
-      title={running ? '点击暂停' : '点击继续'}
-    >
-      {/* 标题 */}
-      <div className="flex items-center justify-between mb-5">
-        <span className="text-xs font-mono text-slate-500">事件循环示意图 · {running ? '运行中' : '已暂停'}</span>
-        <span className="text-xs text-slate-600 cursor-pointer hover:text-slate-400 transition-colors">
-          {running ? '⏸ 点击暂停' : '▶ 点击继续'}
-        </span>
+    <div className="my-6 rounded-xl border border-white/10 bg-[rgba(10,10,25,0.95)] p-5 select-none">
+
+      {/* 标题栏 */}
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-xs font-mono text-slate-500">事件循环示意图</span>
+        <div className="flex items-center gap-1">
+          {STEPS.map((s, i) => (
+            <button
+              key={s.id}
+              onClick={() => { setStep(i); setRunning(false) }}
+              className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                step === i ? 'bg-white scale-125' : 'bg-white/20 hover:bg-white/40'
+              }`}
+              title={s.label}
+            />
+          ))}
+        </div>
       </div>
 
-      {/* 三栏 */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
-        {/* 调用栈 */}
-        <Panel
-          label="调用栈"
-          sublabel="Call Stack"
-          active={active === 'stack'}
-          color="indigo"
-        >
+      {/* 三栏 + 箭头 */}
+      <div className="relative grid grid-cols-3 gap-3 mb-1">
+        <Panel label="调用栈" sublabel="Call Stack" active={active === 'stack'} color="indigo">
           {STACK_ITEMS.map((item, i) => (
             <motion.div
-              key={item}
-              animate={active === 'stack' ? { opacity: [1, 0.3, 1] } : { opacity: 1 }}
-              transition={{ duration: 0.6, delay: i * 0.1, repeat: active === 'stack' ? 1 : 0 }}
-              className="text-xs font-mono text-indigo-300 py-0.5"
+              key={item.label}
+              animate={active === 'stack' ? {
+                backgroundColor: ['rgba(99,102,241,0)', 'rgba(99,102,241,0.15)', 'rgba(99,102,241,0)'],
+              } : {}}
+              transition={{ duration: 0.8, delay: i * 0.15, ease: 'easeInOut' }}
+              className="flex items-center justify-between text-xs font-mono text-indigo-300 py-1 px-1.5 rounded"
             >
-              {item}
+              <span>{item.label}</span>
+              {item.note && <span className="text-[10px] text-indigo-600">{item.note}</span>}
             </motion.div>
           ))}
         </Panel>
 
-        {/* 微任务 */}
-        <Panel
-          label="微任务队列"
-          sublabel="VIP 窗口"
-          active={active === 'micro'}
-          color="cyan"
-        >
+        <Panel label="微任务队列" sublabel="VIP 快取窗口" active={active === 'micro'} color="cyan">
           {MICRO_ITEMS.map((item, i) => (
             <motion.div
-              key={item}
-              animate={active === 'micro' ? { x: [0, 4, 0] } : { x: 0 }}
-              transition={{ duration: 0.4, delay: i * 0.08 }}
-              className="text-xs font-mono text-cyan-300 py-0.5"
+              key={item.label}
+              animate={active === 'micro' ? {
+                x: [0, 6, 0],
+                backgroundColor: ['rgba(34,211,238,0)', 'rgba(34,211,238,0.12)', 'rgba(34,211,238,0)'],
+              } : { x: 0 }}
+              transition={{ duration: 0.6, delay: i * 0.12 }}
+              className="flex items-center justify-between text-xs font-mono text-cyan-300 py-1 px-1.5 rounded"
             >
-              {item}
+              <span>{item.label}</span>
+              <span className="text-[10px] text-cyan-700">{item.note}</span>
             </motion.div>
           ))}
         </Panel>
 
-        {/* 宏任务 */}
-        <Panel
-          label="宏任务队列"
-          sublabel="普通窗口"
-          active={active === 'macro'}
-          color="violet"
-        >
+        <Panel label="宏任务队列" sublabel="普通出餐窗口" active={active === 'macro'} color="violet">
           {MACRO_ITEMS.map((item, i) => (
             <motion.div
-              key={item}
-              animate={active === 'macro' ? { x: [0, 4, 0] } : { x: 0 }}
-              transition={{ duration: 0.4, delay: i * 0.08 }}
-              className="text-xs font-mono text-violet-300 py-0.5"
+              key={item.label}
+              animate={active === 'macro' ? {
+                x: [0, 6, 0],
+                backgroundColor: ['rgba(167,139,250,0)', 'rgba(167,139,250,0.12)', 'rgba(167,139,250,0)'],
+              } : { x: 0 }}
+              transition={{ duration: 0.6, delay: i * 0.12 }}
+              className="flex items-center justify-between text-xs font-mono text-violet-300 py-1 px-1.5 rounded"
             >
-              {item}
+              <span>{item.label}</span>
+              <span className="text-[10px] text-violet-700">{item.note}</span>
             </motion.div>
           ))}
         </Panel>
+
+        {/* 箭头：微任务 → 调用栈 */}
+        <AnimatePresence>
+          {active === 'micro' && (
+            <motion.div
+              initial={{ opacity: 0, scaleX: 0 }}
+              animate={{ opacity: 1, scaleX: 1 }}
+              exit={{ opacity: 0, scaleX: 0 }}
+              style={{ originX: 1 }}
+              className="absolute top-1/2 left-[33.3%] w-[33.3%] -translate-y-1/2 flex items-center justify-center pointer-events-none"
+            >
+              <div className="w-full h-px bg-gradient-to-l from-cyan-400 to-transparent relative">
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-0.5 w-0 h-0 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent border-r-[6px] border-r-cyan-400" />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* 箭头：宏任务 → 调用栈 */}
+        <AnimatePresence>
+          {active === 'macro' && (
+            <motion.div
+              initial={{ opacity: 0, scaleX: 0 }}
+              animate={{ opacity: 1, scaleX: 1 }}
+              exit={{ opacity: 0, scaleX: 0 }}
+              style={{ originX: 1 }}
+              className="absolute top-1/2 right-0 w-[66.6%] -translate-y-1/2 flex items-center justify-center pointer-events-none"
+            >
+              <div className="w-full h-px bg-gradient-to-l from-violet-400 to-transparent relative">
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-0.5 w-0 h-0 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent border-r-[6px] border-r-violet-400" />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* 事件循环指示器 */}
-      <div className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/3 px-4 py-3">
-        <motion.div
-          animate={loopCtrl}
-          className="text-lg shrink-0"
-        >
-          ↻
-        </motion.div>
-        <div className="min-w-0">
-          <div className="flex gap-2 flex-wrap mb-1">
-            {STEPS.map((s, i) => (
+      {/* 当前步骤说明 */}
+      <div className="mt-4 rounded-lg border border-white/5 bg-white/3 p-3">
+        <div className="flex items-start gap-3">
+          <div className="shrink-0 mt-0.5">
+            {active === 'loop' ? (
               <motion.span
-                key={s.id}
-                animate={{ opacity: step === i ? 1 : 0.3, scale: step === i ? 1.05 : 1 }}
-                transition={{ duration: 0.3 }}
-                className={`text-xs font-mono px-2 py-0.5 rounded-full border ${
-                  step === i
-                    ? 'border-white/20 text-white bg-white/10'
-                    : 'border-white/5 text-slate-600'
-                }`}
-              >
-                {s.label}
-              </motion.span>
-            ))}
+                animate={{ rotate: [0, 360] }}
+                transition={{ duration: 0.8, ease: 'easeInOut' }}
+                className="inline-block text-base"
+              >↻</motion.span>
+            ) : (
+              <div className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center ${
+                active === 'stack' ? 'bg-indigo-500/30 text-indigo-300' :
+                active === 'micro' ? 'bg-cyan-500/30 text-cyan-300' :
+                'bg-violet-500/30 text-violet-300'
+              }`}>
+                {step + 1}
+              </div>
+            )}
           </div>
-          <motion.p
-            key={step}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-xs text-slate-400"
-          >
-            {STEPS[step].desc}
-          </motion.p>
+          <div>
+            <div className="text-xs font-semibold text-white mb-1">{currentStep.label}</div>
+            <AnimatePresence mode="wait">
+              <motion.p
+                key={step}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.25 }}
+                className="text-xs text-slate-400 leading-relaxed"
+              >
+                {currentStep.desc}
+              </motion.p>
+            </AnimatePresence>
+          </div>
         </div>
+      </div>
+
+      {/* 控制栏 */}
+      <div className="flex items-center justify-between mt-3">
+        <div className="flex gap-2">
+          <button
+            onClick={prev}
+            className="text-xs font-mono px-3 py-1.5 rounded-md border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-colors"
+          >
+            ← 上一步
+          </button>
+          <button
+            onClick={next}
+            className="text-xs font-mono px-3 py-1.5 rounded-md border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-colors"
+          >
+            下一步 →
+          </button>
+        </div>
+        <button
+          onClick={() => setRunning(r => !r)}
+          className={`text-xs font-mono px-3 py-1.5 rounded-md border transition-colors ${
+            running
+              ? 'border-white/20 text-white bg-white/8 hover:bg-white/12'
+              : 'border-white/10 text-slate-400 hover:text-white hover:border-white/20'
+          }`}
+        >
+          {running ? '⏸ 暂停' : '▶ 自动播放'}
+        </button>
       </div>
     </div>
   )
 }
 
 function Panel({
-  label,
-  sublabel,
-  active,
-  color,
-  children,
+  label, sublabel, active, color, children,
 }: {
   label: string
   sublabel: string
@@ -161,32 +256,21 @@ function Panel({
   color: 'indigo' | 'cyan' | 'violet'
   children: React.ReactNode
 }) {
-  const borderColor = {
-    indigo: active ? 'border-indigo-500/60' : 'border-white/8',
-    cyan:   active ? 'border-cyan-500/60'   : 'border-white/8',
-    violet: active ? 'border-violet-500/60' : 'border-white/8',
-  }[color]
-
-  const bgColor = {
-    indigo: active ? 'bg-indigo-500/8' : 'bg-white/2',
-    cyan:   active ? 'bg-cyan-500/8'   : 'bg-white/2',
-    violet: active ? 'bg-violet-500/8' : 'bg-white/2',
-  }[color]
-
-  const labelColor = {
-    indigo: 'text-indigo-400',
-    cyan:   'text-cyan-400',
-    violet: 'text-violet-400',
+  const styles = {
+    indigo: { border: active ? 'border-indigo-500/50' : 'border-white/8', bg: active ? 'bg-indigo-500/6' : 'bg-white/2', label: 'text-indigo-400' },
+    cyan:   { border: active ? 'border-cyan-500/50'   : 'border-white/8', bg: active ? 'bg-cyan-500/6'   : 'bg-white/2', label: 'text-cyan-400' },
+    violet: { border: active ? 'border-violet-500/50' : 'border-white/8', bg: active ? 'bg-violet-500/6' : 'bg-white/2', label: 'text-violet-400' },
   }[color]
 
   return (
     <motion.div
-      animate={{ borderColor: active ? undefined : undefined }}
-      className={`rounded-lg border ${borderColor} ${bgColor} p-3 transition-colors duration-300`}
+      animate={{ scale: active ? 1.01 : 1 }}
+      transition={{ duration: 0.3 }}
+      className={`rounded-lg border ${styles.border} ${styles.bg} p-3 transition-colors duration-400`}
     >
-      <div className={`text-xs font-semibold ${labelColor} mb-0.5`}>{label}</div>
+      <div className={`text-xs font-semibold ${styles.label} mb-0.5`}>{label}</div>
       <div className="text-[10px] text-slate-600 mb-2">{sublabel}</div>
-      <div className="space-y-0.5">{children}</div>
+      <div className="space-y-0">{children}</div>
     </motion.div>
   )
 }
