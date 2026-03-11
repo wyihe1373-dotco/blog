@@ -1,0 +1,209 @@
+---
+title: "MDX 是什么，怎么用"
+description: "Markdown + JSX 的结合——写文章的同时可以嵌入组件。从基础语法到项目里的实际用法"
+date: "2026-03-11"
+tags: ["工程化", "MDX", "学习笔记"]
+---
+
+这个博客的每篇文章都是 `.mdx` 文件写的。MDX 是什么，为什么不直接用 `.md`——记录一下。
+
+---
+
+## MDX = Markdown + JSX
+
+普通 Markdown 只能写文本、标题、代码块这类静态内容。MDX 在此基础上允许你**在文章里直接使用 JSX 组件**。
+
+```mdx
+## 普通 Markdown 写法
+
+这是一段文字，下面是代码块：
+
+```js
+const x = 1
+```
+
+---
+
+## MDX 能做的
+
+除了上面这些，还可以直接插入组件：
+
+import Chart from './Chart'
+
+<Chart data={salesData} />
+
+<Callout type="warning">
+  注意：这里的数据是演示用的
+</Callout>
+```
+
+组件就是普通的 React 组件，可以有交互、有状态、可以 fetch 数据，不再受限于静态文本。
+
+---
+
+## 文件结构
+
+MDX 文件通常分两部分：
+
+```mdx
+---
+title: "文章标题"
+description: "副标题"
+date: "2026-03-11"
+tags: ["标签1", "标签2"]
+---
+
+正文内容从这里开始……
+```
+
+上面 `---` 包裹的部分叫 **Front Matter**，是 YAML 格式的元数据，用来存标题、日期、标签等信息。正文里写普通 Markdown 就行。
+
+解析时用 `gray-matter` 这个库把两部分分开：
+
+```ts
+import matter from 'gray-matter'
+
+const file = fs.readFileSync('post.mdx', 'utf-8')
+const { data, content } = matter(file)
+
+// data  → { title: '...', date: '...', tags: [...] }
+// content → 正文的 Markdown/MDX 字符串
+```
+
+---
+
+## 常用 Markdown 语法
+
+### 标题
+
+```md
+# 一级标题
+## 二级标题
+### 三级标题
+```
+
+### 强调
+
+```md
+**加粗**
+*斜体*
+~~删除线~~
+`行内代码`
+```
+
+### 列表
+
+```md
+- 无序列表
+- 第二项
+  - 嵌套
+
+1. 有序列表
+2. 第二项
+```
+
+### 链接和图片
+
+```md
+[链接文字](https://example.com)
+![图片描述](./image.png)
+```
+
+### 代码块
+
+用三个反引号包裹，后面跟语言名：
+
+````md
+```javascript
+const sum = (a, b) => a + b
+```
+````
+
+### 表格
+
+```md
+| 列1 | 列2 | 列3 |
+|-----|-----|-----|
+| A   | B   | C   |
+| D   | E   | F   |
+```
+
+### 引用
+
+```md
+> 这是一段引用文字
+> 可以多行
+```
+
+### 分割线
+
+```md
+---
+```
+
+---
+
+## 这个博客里的用法
+
+这个博客用 `next-mdx-remote` 渲染 MDX，在 [app/blog/[slug]/page.tsx](app/blog/[slug]/page.tsx) 里：
+
+```tsx
+import { MDXRemote } from 'next-mdx-remote/rsc'
+import matter from 'gray-matter'
+
+const file = fs.readFileSync(`content/posts/${slug}.mdx`, 'utf-8')
+const { data, content } = matter(file)
+
+// data 用来渲染文章头部（标题、标签、日期）
+// content 传给 MDXRemote 渲染正文
+<MDXRemote
+  source={content}
+  components={{
+    // 覆盖默认的 pre，加自定义样式
+    pre: ({ children, ...props }) => (
+      <div className="code-block">
+        <pre {...props}>{children}</pre>
+      </div>
+    ),
+  }}
+/>
+```
+
+`components` 参数可以替换任意 HTML 元素的默认渲染方式。比如把所有 `<pre>` 换成自定义的带样式的版本，或者把 `<a>` 换成带 `target="_blank"` 的版本。
+
+---
+
+## MDX 里嵌入组件
+
+如果要在文章里插入交互组件，只需要在文件顶部 import，然后像写 JSX 一样用：
+
+```mdx
+import Demo from '@/components/Demo'
+import Callout from '@/components/Callout'
+
+## 演示
+
+<Demo />
+
+<Callout type="tip">
+  这是一个提示框组件，可以传 type 控制样式
+</Callout>
+```
+
+组件和普通 Markdown 内容可以混写，不需要特别分隔。
+
+---
+
+## `.md` vs `.mdx`
+
+| | `.md` | `.mdx` |
+|-|-------|--------|
+| Markdown 语法 | ✅ | ✅ |
+| Front Matter | ✅（需要插件） | ✅ |
+| JSX 组件 | ❌ | ✅ |
+| import 语句 | ❌ | ✅ |
+| 适合场景 | 纯文本内容 | 需要交互/自定义组件 |
+
+如果文章只是纯文字 + 代码，`.md` 就够了。需要嵌入可交互的演示、图表、自定义提示块这类东西，才用 `.mdx`。
+
+这个博客用 `.mdx` 主要是为了以后方便扩展——现在的文章都是纯 Markdown 内容，但如果哪篇需要加个交互 Demo，不用改任何配置，直接在文件里 import 组件就行。
