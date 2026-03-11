@@ -1,91 +1,97 @@
 ---
-title: "事件循环：JS 为什么不会卡死"
-description: "单线程怎么做到「同时」处理定时器、网络请求、用户点击——从调用栈到宏任务微任务，结合实际代码说清楚"
+title: "事件循环学习笔记"
+description: "单线程怎么做到「同时」处理定时器、网络请求、用户点击——用餐厅比喻说清楚，宏任务微任务常用场景汇总"
 date: "2026-03-10"
-tags: ["经典问题", "JavaScript", "浏览器"]
+tags: ["学习笔记", "JavaScript", "浏览器"]
 ---
 
-JS 是单线程的，但页面既能响应点击、又能跑定时器、还能等网络请求——这些"同时在跑"的东西，背后靠的就是事件循环。
+JS 是单线程的，但页面既能响应点击、又能跑定时器、还能等网络请求。这些"同时在跑"的东西，背后靠的就是事件循环。
+
+用一个比喻能把这件事说清楚。
 
 ---
 
-## 先搞清楚调用栈
+## 餐厅比喻：一个服务员的餐厅
 
-JS 执行代码靠**调用栈（Call Stack）**，先进后出：
+想象一个非常简单的餐厅，只有**一个服务员**（JavaScript 主线程）。
 
-```js
-function a() { b() }
-function b() { c() }
-function c() { console.log('c') }
+**单线程的问题：** 服务员一次只能服务一桌。他给这桌点完菜，才能去给下一桌倒水。如果有一桌客人一直拉着他聊天，其他所有客人都得等——这就是"阻塞"。
 
-a()
-// 调用栈变化：
-// a 入栈
-//   b 入栈
-//     c 入栈 → 执行 console.log → c 出栈
-//   b 出栈
-// a 出栈
+遇到耗时的事情更麻烦：如果有桌客人点了"炖 2 小时的汤"，服务员站在后厨干等，餐厅直接瘫痪。
+
+**解决方案：** 引入分工机制。
+
+---
+
+## 分工机制：四个角色
+
+**一、服务员（主线程）** — 只负责当前手头的事，执行同步代码。
+
+**二、后厨厨师（浏览器异步线程）** — 接手耗时的任务，比如"等 2 秒后执行"、"发网络请求"、"监听 DOM 变化"。浏览器有专门的计时器线程、网络线程来处理这些，不占用服务员的时间。
+
+**三、出餐口（任务队列）** — 厨师把任务做完后，不会直接塞给服务员（他可能正忙），而是放在出餐口排队等候。
+
+**四、大堂经理（事件循环）** — 永不休息地盯着两件事：服务员手头有没有事、出餐口有没有菜。一旦服务员空了，立刻把出餐口的下一个任务交给他。
+
+整个流程：
+
+```
+服务员接到任务 → 耗时的交给厨师 → 继续服务其他客人
+厨师做完 → 放在出餐口
+大堂经理发现服务员空了 → 从出餐口取一个任务给服务员
+循环往复
 ```
 
-调用栈只有一个，同一时间只能执行一件事。那 `setTimeout` 这种"等 1 秒后执行"是怎么做到的？
+对应到代码就是：
+
+```
+主线程执行同步代码（直到调用栈空）
+→ 清空微任务队列（全部跑完）
+→ 从宏任务队列取一个任务
+→ 再清空微任务队列
+→ 再取宏任务
+→ ……
+```
 
 ---
 
-## 任务队列
+## 两种出餐口：宏任务和微任务
 
-浏览器有专门的**任务队列**，存放"等会儿要执行"的回调。事件循环就是不断做一件事：
+餐厅里还有个细节：出餐口分两个窗口，一个是**普通出餐口（宏任务队列）**，一个是**VIP 快取窗口（微任务队列）**。
 
-```
-while (true) {
-  执行调用栈里的同步代码（直到栈空）
-  清空微任务队列（全部跑完）
-  从宏任务队列取一个任务执行
-  重复
-}
-```
+大堂经理的规则：**每次服务员空下来，先把 VIP 窗口的菜全部取完，再去普通窗口取一个。**
 
-所以执行顺序固定是：**同步代码 → 微任务 → 宏任务 → 微任务 → 宏任务 → ...**
-
----
-
-## 宏任务 vs 微任务
-
-| 类型 | 常见来源 |
+| 队列 | 对应代码 |
 |------|---------|
-| 宏任务（Macrotask） | `setTimeout`、`setInterval`、DOM 事件回调、`fetch` 网络回调、`MessageChannel` |
-| 微任务（Microtask） | `Promise.then`、`async/await`、`queueMicrotask`、`MutationObserver` |
-
-**关键区别：** 每次宏任务执行完，会把当前所有微任务清空，再取下一个宏任务。微任务优先级高于宏任务。
+| 宏任务（普通出餐口） | `setTimeout`、`setInterval`、DOM 事件回调、网络请求回调 |
+| 微任务（VIP 快取窗口） | `Promise.then`、`async/await`、`queueMicrotask`、`MutationObserver` |
 
 ```js
-console.log('1')
+console.log('1')                                        // 同步
+setTimeout(() => console.log('2'), 0)                   // 宏任务，放普通出餐口
+Promise.resolve().then(() => console.log('3'))          // 微任务，放 VIP 窗口
+console.log('4')                                        // 同步
 
-setTimeout(() => console.log('2'), 0)   // 宏任务，哪怕 0ms 也要排队
-
-Promise.resolve().then(() => console.log('3'))  // 微任务
-
-console.log('4')
-
-// 输出顺序：1 → 4 → 3 → 2
-// 解释：
-// 同步代码先跑：1、4
-// 同步完成，清空微任务：3
-// 取宏任务：2
+// 输出：1 → 4 → 3 → 2
+//
+// 服务员先把手头同步代码做完：1、4
+// 空下来，大堂经理先清 VIP 窗口：3
+// 再去普通出餐口取一个：2
 ```
 
-即使 `setTimeout(fn, 0)` 写了 0ms，它也是宏任务，要等微任务全部跑完才轮到它。
+哪怕 `setTimeout(fn, 0)` 延迟是 0，它也是宏任务，要等微任务全清完才轮到它。
 
 ---
 
-## async/await 本质是 Promise
+## async/await：也是微任务
 
-`await` 后面的代码，相当于 `.then()` 里的回调，会进微任务队列：
+`async/await` 本质是 `Promise` 的语法糖，`await` 之后的代码等价于 `.then()` 里的回调，进微任务队列（VIP 窗口）：
 
 ```js
 async function main() {
-  console.log('A')
-  await Promise.resolve()  // 把后面的代码放入微任务队列
-  console.log('B')         // 微任务
+  console.log('A')        // 同步
+  await Promise.resolve() // 把下面的代码放进 VIP 窗口
+  console.log('B')        // 微任务，等同步代码跑完再执行
 }
 
 console.log('start')
@@ -93,64 +99,203 @@ main()
 console.log('end')
 
 // 输出：start → A → end → B
-// A 是同步的（await 之前），end 也是同步的（main() 调用后立刻继续）
-// B 是微任务，等同步代码跑完再执行
+// A 是同步（await 之前）
+// end 是同步（main() 调用后主线程继续往下）
+// B 是微任务，等 start/A/end 全跑完才执行
 ```
-
-这个顺序有时候会出乎意料，但记住规则就好：**`await` 下面的代码，等价于 `.then()` 回调**。
 
 ---
 
-## 项目里的 setTimeout：打字机效果
+## 项目里的例子：打字机效果
 
-博客首页的打字机动画（[Typewriter.tsx](components/Hero/Typewriter.tsx)）用了嵌套 `setTimeout`，每隔固定时间往调用栈里扔一个"更新一个字符"的任务：
+博客首页的打字机动画（[Typewriter.tsx](components/Hero/Typewriter.tsx)）就是事件循环驱动的：
 
 ```tsx
 useEffect(() => {
   const target = roles[roleIdx]
 
+  // 注册一个宏任务：80ms/40ms 后执行
   const timeout = setTimeout(() => {
     if (phase === 'typing') {
       if (display.length < target.length) {
         setDisplay(target.slice(0, display.length + 1))  // 打一个字
       } else {
-        setTimeout(() => setPhase('deleting'), 2000)     // 停 2s 再删
+        setTimeout(() => setPhase('deleting'), 2000)     // 停 2s 再删（又一个宏任务）
       }
     } else {
       if (display.length > 0) {
-        setDisplay(display.slice(0, -1))                  // 删一个字
+        setDisplay(display.slice(0, -1))                 // 删一个字
       } else {
-        setRoleIdx((i) => (i + 1) % roles.length)         // 换下一句
+        setRoleIdx((i) => (i + 1) % roles.length)
         setPhase('typing')
       }
     }
-  }, phase === 'typing' ? 80 : 40)   // 打字 80ms/字，删字 40ms/字
+  }, phase === 'typing' ? 80 : 40)
 
   return () => clearTimeout(timeout)
 }, [display, phase, roleIdx])
 ```
 
-每次 `setTimeout` 触发，执行完回调（更新一个字符）后，React 的 `setState` 又会触发新一轮渲染，`useEffect` 再跑，再注册下一个 `setTimeout`——形成一个"宏任务接力链"。
+换成餐厅比喻：
 
-调用栈里同一时间只有一个字符更新在跑，其余时间调用栈是空的，浏览器可以正常响应用户点击、滚动，不会卡死。
+- 服务员每次执行完"更新一个字符"，就把下一个任务（"80ms 后再更新一个字符"）交给**后厨厨师**（计时器线程）去计时
+- 80ms 到了，厨师把回调放进**普通出餐口**（宏任务队列）
+- 服务员空下来，大堂经理把它取出来执行
+- 循环往复，形成"宏任务接力链"
+
+每次只执行一个字符的更新，调用栈空下来的时候浏览器可以正常响应用户点击、滚动——**这就是单线程不卡死的根本原因**。
 
 ---
 
-## 常见的执行顺序题
+## 宏任务的常用场景
 
-把上面的规则组合起来，能解释很多"奇怪"的顺序：
+### setTimeout / setInterval — 定时执行
+
+```js
+// 延迟执行，不阻塞主线程
+setTimeout(() => {
+  console.log('1 秒后执行')
+}, 1000)
+
+// 轮询：每隔 3 秒检查一次状态
+const timer = setInterval(async () => {
+  const status = await checkOrderStatus(orderId)
+  if (status === 'done') {
+    clearInterval(timer)
+    showSuccess()
+  }
+}, 3000)
+```
+
+`setTimeout(fn, 0)` 常用来把某段逻辑"推迟到当前同步代码执行完"——实际上是放进宏任务队列，等主线程空了再跑：
+
+```js
+// 场景：初始化时需要等 DOM 渲染完再操作
+// 如果直接操作，元素可能还没挂载
+setTimeout(() => {
+  document.getElementById('chart')?.scrollIntoView()
+}, 0)
+```
+
+### DOM 事件回调 — 用户操作触发
+
+```js
+// 点击、输入、滚动都是宏任务
+button.addEventListener('click', () => {
+  console.log('点击了')
+})
+
+// 防抖：用 setTimeout 延迟处理，避免频繁触发
+let debounceTimer
+input.addEventListener('input', (e) => {
+  clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => {
+    search(e.target.value)  // 停止输入 300ms 后才真正搜索
+  }, 300)
+})
+```
+
+### MessageChannel — 比 setTimeout 更精确的异步
+
+```js
+// React 内部用 MessageChannel 实现任务调度
+// 比 setTimeout(fn, 0) 延迟更短，适合高优先级的异步任务
+const channel = new MessageChannel()
+channel.port1.onmessage = () => {
+  // 下一个宏任务执行
+  performWork()
+}
+channel.port2.postMessage(null)
+```
+
+---
+
+## 微任务的常用场景
+
+### Promise.then — 异步结果的后续处理
+
+```js
+// 链式处理：每个 .then 都是一个微任务
+fetch('/api/user')
+  .then(res => res.json())       // 微任务1
+  .then(data => {                // 微任务2（前一个 .then 完成后）
+    renderUser(data)
+  })
+  .catch(err => {                // 出错时走这里
+    showError(err.message)
+  })
+```
+
+### async/await — 更易读的微任务写法
+
+```js
+// 等价于上面的 .then 链，但可读性更好
+async function loadUser() {
+  try {
+    const res = await fetch('/api/user')   // 等网络，await 后面进微任务队列
+    const data = await res.json()          // 再等 json 解析
+    renderUser(data)
+  } catch (err) {
+    showError(err.message)
+  }
+}
+```
+
+### queueMicrotask — 手动入队微任务
+
+```js
+// 不想用 Promise 包装，但需要异步执行的场景
+queueMicrotask(() => {
+  // 当前同步代码跑完后立刻执行，比 setTimeout 更早
+  updateBadgeCount()
+})
+
+// 常见场景：批量更新，避免同步代码里多次触发
+let pending = false
+function scheduleUpdate() {
+  if (pending) return
+  pending = true
+  queueMicrotask(() => {
+    pending = false
+    flushUpdates()  // 统一处理，而不是每次同步修改都触发一次
+  })
+}
+```
+
+### MutationObserver — 监听 DOM 变化
+
+```js
+// 监听某个节点的子节点变化，回调是微任务
+const observer = new MutationObserver((mutations) => {
+  mutations.forEach(mutation => {
+    console.log('DOM 变了：', mutation.type)
+  })
+})
+
+observer.observe(document.getElementById('list'), {
+  childList: true,   // 监听子节点增删
+  subtree: true,     // 监听所有后代
+})
+
+// MutationObserver 回调在当前宏任务结束后、下一个宏任务开始前执行
+// 也就是微任务时机
+```
+
+---
+
+## 综合例子
 
 ```js
 console.log('script start')
 
 async function async1() {
-  console.log('async1 start')
-  await async2()
-  console.log('async1 end')  // 微任务
+  console.log('async1 start')   // 同步
+  await async2()                 // async2 是同步，但 await 之后的代码进微任务
+  console.log('async1 end')     // 微任务
 }
 
 async function async2() {
-  console.log('async2')
+  console.log('async2')         // 同步
 }
 
 setTimeout(() => console.log('setTimeout'), 0)  // 宏任务
@@ -158,43 +303,28 @@ setTimeout(() => console.log('setTimeout'), 0)  // 宏任务
 async1()
 
 new Promise(resolve => {
-  console.log('promise1')
+  console.log('promise1')       // 同步（Promise 构造函数里是同步的）
   resolve()
-}).then(() => console.log('promise2'))  // 微任务
+}).then(() => console.log('promise2'))          // 微任务
 
 console.log('script end')
 ```
 
-分析：
-1. 同步代码从上到下：`script start` → `async1 start` → `async2` → `promise1` → `script end`
-2. 清空微任务队列：`async1 end`（await 后的代码）→ `promise2`（.then 回调）
-3. 取宏任务：`setTimeout`
+按餐厅规则拆解：
 
-**输出：** `script start` → `async1 start` → `async2` → `promise1` → `script end` → `async1 end` → `promise2` → `setTimeout`
+1. **服务员把同步代码全部执行完：**
+   `script start` → `async1 start` → `async2` → `promise1` → `script end`
 
----
+2. **服务员空下来，大堂经理清 VIP 窗口（微任务）：**
+   `async1 end` → `promise2`
 
-## 为什么微任务优先
+3. **再去普通出餐口取一个宏任务：**
+   `setTimeout`
 
-微任务设计上就是"当前任务的尾巴"——比如 Promise resolve 之后，后续处理应该尽快运行，不应该被其他不相关的宏任务插队。
-
-实际影响：
-
-```js
-// 场景：请求完成后立刻更新 UI，不想被其他定时器插队
-fetch('/api/data')
-  .then(res => res.json())
-  .then(data => {
-    updateUI(data)  // 微任务，fetch 回调跑完立刻执行，不会被 setTimeout 插队
-  })
-```
-
-如果 `Promise.then` 是宏任务，页面上就可能出现：网络回来了→等定时器→等动画帧→才更新 UI，用户明显感觉到延迟。
+**最终输出：** `script start` → `async1 start` → `async2` → `promise1` → `script end` → `async1 end` → `promise2` → `setTimeout`
 
 ---
 
 ## 一句话总结
 
-同步代码 → 把微任务全清空 → 取一个宏任务执行 → 再清空微任务 → 再取宏任务……
-
-JS 单线程不会真正"同时"做多件事，事件循环只是让它在任务之间快速切换，看起来像并发。
+事件循环就是那个"永不休息的大堂经理"：主线程（服务员）空了，先清完微任务（VIP 窗口），再取一个宏任务（普通出餐口），再清微任务……如此循环。JS 不会真正同时干多件事，只是靠这套调度机制让单线程看起来能"并发"处理任务。
