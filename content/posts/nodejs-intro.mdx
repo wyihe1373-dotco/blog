@@ -17,7 +17,7 @@ tags: ["学习笔记", "前端工程"]
 
 `npm run dev`、`npm run build`——这些命令背后其实都是 Node.js 在执行脚本。Vite、Webpack、ESLint 这些工具，全是 Node.js 程序。我发现自己每天都在用，只是没意识到。
 
-真正「主动」用 Node.js，是有次需要批量重命名一批图片文件。我本来想用 shell 脚本，但写了几行就头疼了。换成 Node.js 写，十几行搞定，语法还是熟悉的 JS——这是我第一次意识到 Node.js 对前端来说有多顺手。
+真正「主动」用 Node.js，是有次需要批量重命名一批图片文件。直接用 JS 写，十几行搞定，语法还是熟悉的——这是我第一次意识到 Node.js 对前端来说有多顺手。
 
 ---
 
@@ -60,11 +60,11 @@ fs.readdirSync('./public').forEach(file => {
 })
 ```
 
-调用系统命令、读写文件，这种活儿用 Node.js 写比 shell 舒服多了。
+调用系统命令、读写文件，这种活儿用 Node.js 写很顺手。
 
 ### 3. 跑本地服务
 
-有几次需要临时起一个静态文件服务，不想装 Python 的情况下：
+有几次需要临时起一个静态文件服务：
 
 ```js
 const http = require('http')
@@ -156,14 +156,6 @@ const filePath = path.join(__dirname, '../data/config.json')
 | 环境变量 | `process.env.NODE_ENV` |
 | 项目根目录 | `process.cwd()` |
 
-这几个基本够覆盖日常脚本需求了。真要写正式的后端服务，再去学 Express 或 Fastify。
+这几个基本够覆盖日常脚本需求了。
 
----
 
-## 我的感受
-
-Node.js 对前端来说最大的价值不是「可以写后端了」，而是**工具链打通了**。
-
-你能看懂 `vite.config.ts` 里那些操作，能自己写构建脚本，能在没有后端的情况下自己 mock 数据——这些能力让你在团队里更独立，排查问题也更有底气。
-
-不用专门学，跟着项目需求遇到了就查，用几次就熟了。
