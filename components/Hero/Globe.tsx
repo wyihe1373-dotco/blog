@@ -13,6 +13,11 @@ function Scene({ isMobile }: { isMobile: boolean }) {
   const tabVisible = useRef(true)
   const { gl } = useThree()
 
+  const dragging = useRef(false)
+  const lastX = useRef(0)
+  const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const autoRotate = useRef(true)
+
   const colorMap = useLoader(TextureLoader, `${BASE}/earth-map.jpg`)
   const cloudsMap = useLoader(TextureLoader, `${BASE}/earth-clouds.png`)
 
@@ -33,8 +38,35 @@ function Scene({ isMobile }: { isMobile: boolean }) {
     return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [])
 
+  // 拖拽旋转
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      if (!dragging.current) return
+      const deltaX = e.clientX - lastX.current
+      lastX.current = e.clientX
+      if (earthRef.current) earthRef.current.rotation.y += deltaX * 0.005
+      // 云层保持差速比例（0.667 = 0.08 / 0.12）
+      if (cloudsRef.current) cloudsRef.current.rotation.y += deltaX * 0.005 * 0.667
+    }
+    const onUp = () => {
+      if (!dragging.current) return
+      dragging.current = false
+      gl.domElement.style.cursor = 'grab'
+      if (resumeTimer.current) clearTimeout(resumeTimer.current)
+      resumeTimer.current = setTimeout(() => { autoRotate.current = true }, 1500)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      if (resumeTimer.current) clearTimeout(resumeTimer.current)
+    }
+  }, [gl])
+
   useFrame((_, delta) => {
     if (!inViewport.current || !tabVisible.current) return
+    if (!autoRotate.current) return
     if (earthRef.current) earthRef.current.rotation.y += delta * 0.12
     if (cloudsRef.current) cloudsRef.current.rotation.y += delta * 0.08
   })
@@ -48,7 +80,19 @@ function Scene({ isMobile }: { isMobile: boolean }) {
       <ambientLight intensity={0.15} />
 
       {/* 地球本体 */}
-      <mesh ref={earthRef}>
+      <mesh
+        ref={earthRef}
+        onPointerDown={(e) => {
+          e.stopPropagation()
+          dragging.current = true
+          autoRotate.current = false
+          lastX.current = e.clientX
+          if (resumeTimer.current) clearTimeout(resumeTimer.current)
+          gl.domElement.style.cursor = 'grabbing'
+        }}
+        onPointerEnter={() => { if (!dragging.current) gl.domElement.style.cursor = 'grab' }}
+        onPointerLeave={() => { if (!dragging.current) gl.domElement.style.cursor = 'default' }}
+      >
         <sphereGeometry args={[1.5, seg, seg]} />
         <meshPhongMaterial
           map={colorMap}
