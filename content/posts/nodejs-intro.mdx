@@ -1,0 +1,159 @@
+---
+title: "Node.js 是干什么的？从零开始聊"
+description: "Node.js 到底是什么、能干什么、怎么用——结合实际项目，口语化说清楚"
+date: "2026-03-11"
+tags: ["前端工程", "学习笔记"]
+---
+
+前端写多了，总会碰到 Node.js。但很多人第一反应是：「这不是后端的东西吗？我学它干嘛？」
+
+这篇就是想聊清楚这个问题。
+
+---
+
+## Node.js 到底是什么
+
+一句话：**Node.js 让 JavaScript 能在浏览器之外运行。**
+
+浏览器里的 JS 只能操作 DOM、发请求、处理用户交互。但 Node.js 把 JS 的执行环境搬到了服务器（或你的电脑）上，让它能读写文件、操作数据库、启动 HTTP 服务——这些浏览器 JS 做不到的事。
+
+底层是 V8 引擎（就是 Chrome 里跑 JS 的那个），所以语法和你平时写的 JS 完全一样。
+
+---
+
+## 前端为什么要懂 Node.js
+
+你可能每天都在用，只是没意识到：
+
+- `npm install` — npm 就是跑在 Node.js 上的
+- `npm run dev` — 启动的本地开发服务器，Node.js 进程
+- Webpack、Vite、ESLint、Babel — 这些构建工具全是 Node.js 程序
+- Next.js — 本质上是一个 Node.js 框架，SSR 渲染就在 Node.js 里跑
+
+这个博客就是 Next.js 项目，在本地跑 `npm run dev`，背后就是 Node.js 在监听文件变化、编译 TypeScript、处理 MDX。
+
+---
+
+## 基础用法
+
+### 读写文件
+
+```js
+const fs = require('fs')
+
+// 读文件
+const content = fs.readFileSync('./posts/hello.md', 'utf-8')
+console.log(content)
+
+// 写文件
+fs.writeFileSync('./output.txt', 'Hello Node.js')
+```
+
+浏览器里的 JS 完全做不到这个，但 Node.js 可以直接操作文件系统。
+
+### 起一个 HTTP 服务
+
+```js
+const http = require('http')
+
+const server = http.createServer((req, res) => {
+  res.end('Hello World')
+})
+
+server.listen(3000, () => {
+  console.log('服务跑在 http://localhost:3000')
+})
+```
+
+`node server.js` 跑起来，浏览器访问 3000 端口就能看到响应。Next.js 的 dev server 背后干的就是这件事，只是封装了很多。
+
+### 执行脚本
+
+Node.js 最常见的用法之一是写脚本，比如批量处理文件：
+
+```js
+// scripts/convert-images.js
+const { execSync } = require('child_process')
+const fs = require('fs')
+const path = require('path')
+
+const dir = './public/images'
+fs.readdirSync(dir).forEach(file => {
+  if (file.endsWith('.png')) {
+    const input = path.join(dir, file)
+    const output = input.replace('.png', '.webp')
+    execSync(`cwebp ${input} -o ${output}`)
+    console.log(`转换完成: ${file}`)
+  }
+})
+```
+
+```bash
+node scripts/convert-images.js
+```
+
+这比写 shell 脚本对前端更友好，JS 语法、熟悉的 API。
+
+---
+
+## 在这个项目里的实际体现
+
+这个博客用了 Next.js 静态导出（`output: 'export'`），构建时 Node.js 做了这些：
+
+1. 读取 `content/posts/*.mdx` — `fs.readdir` + `fs.readFile`
+2. 解析 Markdown frontmatter — `gray-matter` 库（Node.js 进程跑）
+3. 编译 MDX 为 React 组件 — `@next/mdx`（Node.js 进程）
+4. 生成静态 HTML — Next.js 调用 React 的服务端渲染，在 Node.js 里跑
+5. 输出 `out/` 目录 — 最终上传到 GitHub Pages 的静态文件
+
+整个构建流程就是一个 Node.js 程序在跑。你运行 `npm run build`，实际上是执行 `next build`，也就是 `node_modules/.bin/next build`，一个 Node.js 脚本。
+
+---
+
+## npm 和 package.json
+
+写 Node.js 项目离不开 npm（Node Package Manager）。
+
+```json
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^19.0.0"
+  }
+}
+```
+
+- `dependencies` — 运行时需要的包（打包进去）
+- `devDependencies` — 开发时用的工具（不打包，比如 TypeScript、ESLint）
+- `scripts` — 快捷命令，`npm run dev` 就是执行 `next dev`
+
+---
+
+## 一个常见误区
+
+Node.js ≠ 后端必须项。很多前端工程只用 Node.js 做：
+
+- 本地开发工具（dev server、hot reload）
+- 构建打包（生成最终静态文件）
+- 脚本自动化（批量重命名、数据处理）
+
+不用写任何「后端接口」，这些场景照样用得很多。
+
+---
+
+## 小结
+
+| 场景 | Node.js 的作用 |
+|------|----------------|
+| `npm install / run` | npm 跑在 Node.js 上 |
+| 本地开发服务器 | Node.js 进程监听文件 |
+| 构建打包 | Vite/Webpack/Next 都是 Node.js |
+| SSR / 静态生成 | Next.js 在 Node.js 里跑 React |
+| 脚本工具 | 批量处理、自动化任务 |
+
+不是说前端必须精通 Node.js，但理解「我在 `npm run dev` 时到底发生了什么」，会让你排查问题、配置工具顺手很多。
