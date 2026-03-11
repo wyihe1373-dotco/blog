@@ -89,7 +89,7 @@ function LocationMarker({
 
       {/* 信息卡 — current 城市常驻，其他城市激活时显示 */}
       {isActive && (
-        <Html occlude distanceFactor={10} style={{ pointerEvents: 'none', userSelect: 'none' }}>
+        <Html style={{ pointerEvents: 'none', userSelect: 'none' }}>
           <div style={{
             background: 'rgba(7,7,24,0.88)',
             border: '1px solid rgba(99,102,241,0.5)',
