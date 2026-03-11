@@ -1,0 +1,212 @@
+---
+title: "WebGL 动画的性能优化实践"
+description: "首页同时跑粒子和 3D 地球两个 WebGL 渲染器——记录针对离屏渲染、Tab 隐藏、移动端降级的优化思路和实现"
+date: "2026-03-11"
+tags: ["性能优化", "WebGL", "学习笔记"]
+---
+
+首页的 Hero 区域同时有两个 WebGL 渲染器：粒子背景（OGL）和旋转地球（Three.js/R3F）。加完地球之后，分析了一下潜在的性能问题，做了几项优化。
+
+---
+
+## 问题背景
+
+两个独立的 WebGL 渲染器意味着：
+
+- 两个 `canvas` 元素，各自占一份 GPU 内存
+- 两个 `requestAnimationFrame` 循环，每帧都在跑
+- **即使页面滚走了，或者 Tab 切走了，两个循环依然在跑**
+
+最后一条是浪费最严重的——用户早就不看 Hero 了，但 GPU 还在每秒渲染 60 帧。
+
+---
+
+## 优化一：离屏停止渲染
+
+用 `IntersectionObserver` 监听渲染容器是否在视口内，离开视口就停，回来再恢复。
+
+```ts
+// OGL 粒子（原生 RAF 循环）
+let inViewport = true
+let tabVisible = true
+
+const shouldRender = () => inViewport && tabVisible
+
+const startLoop = () => {
+  lastTime = performance.now() // 重置，避免恢复时帧差过大
+  rafId = requestAnimationFrame(update)
+}
+const stopLoop = () => cancelAnimationFrame(rafId)
+
+const observer = new IntersectionObserver(([entry]) => {
+  const was = shouldRender()
+  inViewport = entry.isIntersecting
+  if (!was && shouldRender()) startLoop()  // 重新进入视口 → 恢复
+  if (was && !shouldRender()) stopLoop()   // 离开视口 → 暂停
+}, { threshold: 0 })
+
+observer.observe(container)
+```
+
+`threshold: 0` 表示哪怕只有 1px 在视口里就算"可见"，完全离开才停。
+
+Three.js / R3F 里直接在 `useFrame` 里判断，不需要手动管理 RAF：
+
+```tsx
+// R3F Globe
+const inViewport = useRef(true)
+const { gl } = useThree()
+
+useEffect(() => {
+  const observer = new IntersectionObserver(
+    ([e]) => { inViewport.current = e.isIntersecting },
+    { threshold: 0 }
+  )
+  observer.observe(gl.domElement)  // 观察 canvas 元素本身
+  return () => observer.disconnect()
+}, [gl])
+
+useFrame((_, delta) => {
+  if (!inViewport.current) return  // 离屏直接跳过，R3F 的 render loop 还在但几乎零开销
+  // 旋转更新...
+})
+```
+
+两者思路相同，只是因为渲染库不同（OGL 手动管 RAF，R3F 托管了 RAF），处理方式略有差异。
+
+---
+
+## 优化二：Tab 隐藏时停止渲染
+
+浏览器切到后台，`visibilitychange` 事件会触发，`document.hidden` 变为 `true`。
+
+```ts
+const onVisibility = () => {
+  const was = shouldRender()
+  tabVisible = !document.hidden
+  if (!was && shouldRender()) startLoop()
+  if (was && !shouldRender()) stopLoop()
+}
+document.addEventListener('visibilitychange', onVisibility)
+
+// 清理
+return () => document.removeEventListener('visibilitychange', onVisibility)
+```
+
+`shouldRender()` 同时检查 `inViewport && tabVisible`，两个条件都满足才渲染，任意一个不满足就停。
+
+**注意 `lastTime` 重置**：恢复渲染时要把 `lastTime` 重置为 `performance.now()`，否则 `elapsed` 会在恢复的第一帧跳一个大值（等于暂停的时长），导致动画突变。
+
+---
+
+## 优化三：移动端降级
+
+WebGL 渲染的性能开销和两个因素正相关：**多边形数量**和**分辨率（DPR）**。
+
+```tsx
+const isMobile = window.innerWidth < 640
+
+// 多边形数量：移动端 12 段，桌面端 20 段
+const seg = isMobile ? 12 : 20
+<sphereGeometry args={[1.5, seg, seg]} />
+
+// DPR：移动端锁 1，桌面端最高 1.5
+<Canvas dpr={[1, isMobile ? 1 : 1.5]}>
+
+// 抗锯齿：移动端关掉，省 GPU
+<Canvas gl={{ antialias: !isMobile }}>
+```
+
+球体从 20×20 段降到 12×12 段，顶点数从 441 降到 169，减少 62%。在移动端屏幕尺寸下视觉几乎没有区别。
+
+---
+
+## 优化四：R3F 自适应性能
+
+R3F 的 `Canvas` 有一个 `performance` 参数，会监测实际帧率，帧率不足时自动降低 DPR，帧率恢复后再升回来：
+
+```tsx
+<Canvas performance={{ min: 0.5 }} dpr={[1, 1.5]}>
+```
+
+`min: 0.5` 表示允许 DPR 最低降到 `dpr[0] * 0.5 = 0.5`（实际上会在 `[dpr[0], dpr[1]]` 范围内自适应）。低端设备跑不满帧率时，自动降分辨率保帧，而不是直接卡顿。
+
+---
+
+## 优化五：告知 GPU 省电优先
+
+```tsx
+<Canvas gl={{ powerPreference: 'low-power' }}>
+```
+
+WebGL 创建上下文时可以传 `powerPreference` hint，告诉浏览器这个 canvas 优先省电而非性能。双显卡设备（MacBook、部分手机）会倾向于选择集显渲染。对于装饰性动画这完全够用，而且电池更友好。
+
+---
+
+## 为什么没有合并两个 WebGL Context？
+
+合并是最理想的方案，但项目里粒子用的是 **OGL**，地球用的是 **Three.js/R3F**，两个不同的渲染库各自管理自己的 WebGL context 和对象类型，合并需要把其中一个用另一个库重写，改动代价较高。
+
+实际上，**离屏停止渲染（优化一）** 达到的效果和合并 context 一样——用户看不到的时候，两个渲染器都不消耗 GPU。对于装饰性背景来说，这已经足够。
+
+---
+
+## 小结
+
+| 优化 | 实现方式 | 收益 |
+|------|----------|------|
+| 离屏停止渲染 | `IntersectionObserver` | 滚走后 GPU 零消耗 |
+| Tab 隐藏停止渲染 | `visibilitychange` | 后台不耗电 |
+| 移动端降低多边形 | 检测 `window.innerWidth` | 减少 60% 顶点 |
+| 移动端锁 DPR=1 | `dpr={[1, 1]}` | 减少渲染像素数 |
+| 自适应 DPR | R3F `performance={{ min: 0.5 }}` | 低端设备不卡顿 |
+| 省电模式 | `powerPreference: 'low-power'` | 延长电池续航 |
+| 移动端低分辨率贴图 | 生成 512px 宽小图 + 按设备选择 | 减少 ~88% 纹理内存 |
+| 懒加载贴图 | `useLoader` + `Suspense` | 贴图未就绪时不渲染，避免白球闪烁 |
+
+---
+
+## 优化六：贴图加载策略
+
+升级为真实地球贴图后，需要额外关注贴图的加载性能。
+
+### 格式与分辨率
+
+原始贴图为 2048×1024 JPEG（标准等矩形投影），直接使用的体积约 580KB。移动端加载这么大的图没有收益，可以生成一个低分辨率版本：
+
+```bash
+# 生成移动端低分辨率版本（512px 宽），体积从 580KB 降到约 67KB
+cp earth-map.jpg earth-map-mobile.jpg
+sips --resampleWidth 512 earth-map-mobile.jpg
+```
+
+```tsx
+// 根据设备选择贴图
+const colorMap = useLoader(
+  TextureLoader,
+  isMobile ? `${BASE}/earth-map-mobile.jpg` : `${BASE}/earth-map.jpg`
+)
+```
+
+### 贴图投影格式
+
+给球体贴图时，必须使用**等矩形投影**（Equirectangular）：宽高比 **2:1**，覆盖完整经度（0°–360°）和纬度（−90°–90°）。如果使用了普通的"地球照片"（4:3 的渲染截图），应用到球体后只有一面有贴图，另一面显示拉伸的图片边缘。
+
+```
+正确：2048×1024（2:1）→ 完整球面
+错误：2048×1536（4:3）→ 只有半球有贴图
+```
+
+### useLoader + Suspense 懒加载
+
+R3F 的 `useLoader` 会在贴图加载完成前挂起组件，配合 `<Suspense fallback={null}>` 让地球在贴图准备好之前静默等待，避免白球闪烁过渡态。
+
+```tsx
+<Canvas>
+  <Suspense fallback={null}>
+    <Scene isMobile={isMobile} />
+  </Suspense>
+</Canvas>
+```
+
+贴图加载是异步的，Hero 区域的其他内容（文字动画、粒子背景）不受影响，地球静默等待贴图就位后再出现。
