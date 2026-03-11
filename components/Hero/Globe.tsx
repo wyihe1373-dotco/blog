@@ -42,8 +42,9 @@ function LocationMarker({
   const pulseRef = useRef<THREE.Mesh>(null)
   const pulseProgress = useRef(Math.random())
 
-  // active: true if this is the current location (always) OR user clicked it
-  const isActive = active || !!location.current
+  // 当前城市（current: true）始终高亮 + 信息卡常驻，不受点击影响
+  const isCurrent = !!location.current
+  const isActive = isCurrent || active
 
   useFrame((_, delta) => {
     if (!pulseRef.current) return
@@ -62,7 +63,7 @@ function LocationMarker({
       <mesh
         onPointerDown={(e) => {
           e.stopPropagation()
-          if (!location.current) onActivate()
+          if (!isCurrent) onActivate()
         }}
         onPointerEnter={(e) => { e.stopPropagation() }}
       >
