@@ -96,6 +96,25 @@ function Child({ onDone }) {
 
 React 里没有"事件"这个概念，就是函数传来传去。
 
+频繁变化的全局状态我用 Zustand，按需订阅，不会整棵树重渲染：
+
+```tsx
+const useOrderStore = create<OrderStore>((set) => ({
+  orders: [],
+  cancelOrder: (id) => set(state => ({
+    orders: state.orders.map(o =>
+      o.id === id ? { ...o, status: 'cancelled' } : o
+    )
+  }))
+}))
+
+// 只订阅 orders，store 里其他字段变了不会触发这个组件重渲染
+function OrderCount() {
+  const orders = useOrderStore(state => state.orders)
+  return <span>{orders.length} 条订单</span>
+}
+```
+
 ---
 
 ## Computed vs useMemo
@@ -214,6 +233,77 @@ const handleClick = useCallback(() => fetchData(id), [id])
 
 ---
 
+### useEffect 依赖数组的坑
+
+依赖数组写 `[]` 不代表"不依赖任何东西"，是"只跑一次"。如果 effect 里面用到了某个 state，但没有写进依赖，闭包里捕获的值永远是初始值。
+
+WebSocket 是最容易踩这个坑的场景：
+
+```tsx
+function MessageList() {
+  const [messages, setMessages] = useState<string[]>([])
+
+  useEffect(() => {
+    const ws = new WebSocket('ws://...')
+    ws.onmessage = (e) => {
+      // ❌ messages 永远是 []，闭包捕获了初始值，不会更新
+      setMessages([...messages, e.data])
+    }
+    return () => ws.close()
+  }, [])
+}
+```
+
+解法是用函数式更新，完全不读闭包里的值：
+
+```tsx
+ws.onmessage = (e) => {
+  setMessages(prev => [...prev, e.data])  // ✅ prev 永远是最新的
+}
+```
+
+如果必须在 effect 里读最新的 state，用 `useRef` 桥接：
+
+```tsx
+const messagesRef = useRef(messages)
+messagesRef.current = messages  // 每次渲染同步一下
+
+useEffect(() => {
+  const ws = new WebSocket('ws://...')
+  ws.onmessage = (e) => {
+    setMessages([...messagesRef.current, e.data])  // 读 ref，永远最新
+  }
+  return () => ws.close()
+}, [])
+```
+
+---
+
+### React.memo — 让子组件不白跑
+
+默认情况下父组件重渲染，所有子组件都跟着重渲染，不管 props 有没有变。`React.memo` 让子组件跳过没必要的渲染：
+
+```tsx
+// 没有 memo：父组件每次渲染，List 都跟着渲染
+// 有了 memo：items 引用没变，List 跳过
+const List = React.memo(function List({ items }: { items: string[] }) {
+  return <ul>{items.map(i => <li key={i}>{i}</li>)}</ul>
+})
+```
+
+但 `React.memo` 用浅比较判断 props。如果传入的是函数或对象，每次父组件渲染都会产生新引用，memo 就白加了——这就是为什么传给 memo 子组件的函数要用 `useCallback` 包：
+
+```tsx
+// ✅ useCallback 保证引用稳定，memo 才有效
+const onDelete = useCallback((id: string) => {
+  setList(prev => prev.filter(item => item.id !== id))
+}, [])
+
+<List items={list} onDelete={onDelete} />
+```
+
+---
+
 ### 自定义 Hook — 复用逻辑的正确姿势
 
 React 里复用逻辑不用 mixin，用自定义 Hook。就是一个以 `use` 开头的函数，里面可以调用其他 Hook：
@@ -246,7 +336,23 @@ function UserCard({ id }) {
 
 ---
 
-## 一些心得
+## key：不只是循环里要加
+
+`key` 帮 React 识别列表节点，用 `index` 做 key 在列表顺序会变的情况下会出问题——React 会复用位置上的节点而不是跟着数据走，用唯一 id 才准确。
+
+但 `key` 还有个更实用的技巧：**强制重建组件**。
+
+有时候切了某个 id，组件里的内部状态需要全部重置。手动 reset 每个 state 很烦还容易漏，改一下 `key` 就能让 React 把旧组件卸载、新组件重新挂载：
+
+```tsx
+// userId 变了，key 变了，整个 UserProfile 重新挂载
+// 内部的 activeTab、滚动位置、表单填写都全部重置
+<UserProfile key={userId} userId={userId} />
+```
+
+账户切换、表单重置、数据源切换这类场景，改 `key` 往往是最简单的解法。
+
+---
 
 从 Vue 转过来学 React，最难受的不是记 API，是**心智模型的切换**。Vue 那套我已经很顺手了——"改数据，视图自动跟"；React 完全不一样，每次 render 都是全新的一次描述，得接受"这次 state 是这样，所以界面应该长这样"的思路。
 

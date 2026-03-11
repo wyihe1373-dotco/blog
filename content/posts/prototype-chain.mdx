@@ -251,14 +251,92 @@ Object.keys(dog)  // ['name']
 
 **理解 Vue 2 的 `$set`**
 
-Vue 2 用 `Object.defineProperty` 拦截属性，只能拦截已存在的属性，新增属性不触发更新：
+Vue 2 的响应式系统建立在 `Object.defineProperty` 之上。它的工作方式是：组件初始化时，Vue 遍历 `data` 里的每个属性，用 `Object.defineProperty` 给每个属性加上 getter/setter：
 
 ```js
-this.obj.newKey = 'value'           // 不触发视图更新
-this.$set(this.obj, 'newKey', 'value')  // 需要这样写
+// Vue 2 响应式的简化实现
+function defineReactive(obj, key, val) {
+  Object.defineProperty(obj, key, {
+    get() {
+      // 收集依赖（记录哪些组件用到了这个属性）
+      dep.depend()
+      return val
+    },
+    set(newVal) {
+      val = newVal
+      // 通知依赖更新（触发视图重新渲染）
+      dep.notify()
+    }
+  })
+}
+
+// 初始化时对每个属性执行
+Object.keys(data).forEach(key => defineReactive(data, key, data[key]))
 ```
 
-理解了原型链和属性拦截，这个限制就说得清了。Vue 3 换成 Proxy 之后，能拦截属性的增删，才不再需要 `$set`。
+问题在于：**`Object.defineProperty` 只能拦截已存在的属性**。初始化之后新增的属性，Vue 没有机会给它加 setter，所以赋值时不会触发更新：
+
+```js
+// data() { return { obj: { a: 1 } } }
+
+this.obj.a = 2         // ✅ 触发更新（初始化时已经拦截了 a）
+this.obj.newKey = 'x'  // ❌ 不触发更新（newKey 没有 setter）
+delete this.obj.a      // ❌ 不触发更新（删除也拦截不到）
+```
+
+`$set` 就是用来绕过这个限制的。它的内部做了两件事：手动调用 `defineReactive` 给新属性加响应式，然后手动触发一次更新通知：
+
+```js
+// Vue 2 $set 的简化实现
+Vue.prototype.$set = function(obj, key, value) {
+  // 给新属性补上响应式拦截
+  defineReactive(obj, key, value)
+  // 手动通知依赖更新
+  obj.__ob__.dep.notify()
+}
+
+// 所以必须这样写才能让视图响应
+this.$set(this.obj, 'newKey', 'x')  // ✅ 触发更新
+```
+
+**Vue 3 为什么不再需要 `$set`**
+
+Vue 3 把响应式换成了 `Proxy`。`Proxy` 是在对象外包一层代理，对整个对象的操作都会经过这层代理，而不是针对某个具体属性：
+
+```js
+const raw = { a: 1 }
+
+const proxy = new Proxy(raw, {
+  get(target, key) {
+    console.log('读取', key)
+    return target[key]
+  },
+  set(target, key, value) {
+    console.log('设置', key, '=', value)
+    target[key] = value
+    return true
+  },
+  deleteProperty(target, key) {
+    console.log('删除', key)
+    delete target[key]
+    return true
+  }
+})
+
+proxy.a = 2          // 设置 a = 2（已有属性，能拦截）
+proxy.newKey = 'x'   // 设置 newKey = x（新增属性，也能拦截）
+delete proxy.a       // 删除 a（删除，也能拦截）
+```
+
+`Proxy` 拦截的是"对这个对象做什么操作"，不需要提前知道有哪些属性。新增、删除、修改都走同一个 trap，Vue 3 的响应式系统在 `set` 和 `deleteProperty` 里触发更新就够了：
+
+```js
+// Vue 3 中直接操作即可，无需 $set
+this.obj.newKey = 'x'  // ✅ 触发更新
+delete this.obj.a      // ✅ 触发更新
+```
+
+两者的核心差异就在这里：`Object.defineProperty` 是**属性级别**的拦截，必须提前知道属性名；`Proxy` 是**对象级别**的拦截，任何操作都能捕获到。
 
 ---
 

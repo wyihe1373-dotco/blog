@@ -1,0 +1,314 @@
+---
+title: "Vue 常见问题记录"
+description: "v-if/v-show、computed/watch/watchEffect、ref/reactive、组件通信——结合实际场景说清楚"
+date: "2026-02-10"
+tags: ["Vue", "经典问题", "学习笔记"]
+---
+
+写 Vue 遇到的一些常见问题，结合具体场景记下来，方便自己回顾。
+
+---
+
+## v-if vs v-show
+
+两个都能控制显隐，但行为完全不同：
+
+- `v-if`：条件为 false 时组件**不存在**，没有 DOM，没有生命周期
+- `v-show`：始终渲染，只是加了 `display: none`，组件一直活着
+
+**判断用哪个，看组件需不需要保留状态：**
+
+```vue
+<!-- 弹窗需要播放入场动画，必须提前渲染好 → v-show -->
+<AnimatedModal v-show="isOpen" />
+
+<!-- 用户没权限时完全不需要这块 → v-if，减少不必要的渲染 -->
+<AdminPanel v-if="user.isAdmin" />
+
+<!-- 选项卡切换，希望保留每个 tab 的滚动位置和表单填写 → v-show -->
+<TabPanel v-show="activeTab === 'profile'" />
+<TabPanel v-show="activeTab === 'settings'" />
+```
+
+频繁切换用 `v-show`（DOM 已经在，只改样式）；初始条件很少为真、或切换频率很低，用 `v-if`（条件不满足时完全不占内存）。
+
+**`v-if` 和 `v-for` 不要写在同一个元素上：**
+
+Vue 3 里 `v-if` 优先级高于 `v-for`，写在一起时每条数据都要先判断 `v-if`。
+
+```vue
+<!-- ❌ 每次循环都判断一遍 status -->
+<li v-for="item in list" v-if="item.status === 'active'">{{ item.name }}</li>
+
+<!-- ✅ 用 computed 先过滤好，v-for 只渲染需要的 -->
+<li v-for="item in activeList">{{ item.name }}</li>
+```
+
+---
+
+## computed vs watch vs watchEffect
+
+一句话区分：
+
+- `computed`：**我要一个值**，它由其他数据推导出来
+- `watch`：**某个数据变了，我要做件事**（尤其是异步操作）
+- `watchEffect`：**我要做件事**，但懒得手动列依赖，让 Vue 自己追踪
+
+**`computed` 有缓存，这是它和方法最大的区别：**
+
+```vue
+<script setup>
+const list = ref([...])  // 几百条数据
+
+// ❌ 普通方法：模板每次渲染都重新过滤，哪怕 list 没变
+function getActiveList() {
+  return list.value.filter(item => item.active)
+}
+
+// ✅ computed：list 不变就直接返回缓存，不重算
+const activeList = computed(() => list.value.filter(item => item.active))
+
+// ✅ 还可以做复合计算
+const stats = computed(() => ({
+  total: list.value.length,
+  active: list.value.filter(i => i.active).length,
+  inactive: list.value.filter(i => !i.active).length,
+}))
+</script>
+```
+
+**`watch` 适合做异步操作，能拿到新旧值：**
+
+```vue
+<script setup>
+const keyword = ref('')
+const results = ref([])
+const loading = ref(false)
+
+watch(keyword, async (newVal, oldVal) => {
+  if (!newVal || newVal === oldVal) return
+  loading.value = true
+  results.value = await searchApi(newVal)
+  loading.value = false
+}, { immediate: false, debounce: 300 })
+
+// 监听对象内部属性变化，加 deep 或用 getter
+const user = reactive({ profile: { age: 18 } })
+
+watch(() => user.profile.age, (newAge) => {
+  console.log('年龄变了：', newAge)
+})
+</script>
+```
+
+**`watchEffect` 适合依赖多、想初始化就执行一次：**
+
+```vue
+<script setup>
+const userId = ref(1)
+const page = ref(1)
+const data = ref([])
+
+// userId 或 page 任何一个变化，都会重新请求
+// 不需要手动写 watch([userId, page], ...)
+// 而且初始化时就会执行一次
+watchEffect(async () => {
+  data.value = await fetchList(userId.value, page.value)
+})
+</script>
+```
+
+---
+
+## ref vs reactive
+
+两个都能做响应式，但 `reactive` 有个坑：**解构会破坏响应式**。
+
+```js
+const state = reactive({ count: 0, name: 'vue' })
+
+// ❌ 解构后 count 就是普通变量，改了不会更新视图
+const { count } = state
+count++  // 无效
+
+// ✅ 要解构用 toRefs，得到的是 ref，改 .value 才有效
+const { count } = toRefs(state)
+count.value++
+
+// ❌ reactive 还有个坑：整体替换会丢失响应式
+let user = reactive({ name: 'wyh' })
+user = reactive({ name: 'new' })  // 这一步后原来的引用已经断了
+```
+
+踩过这两个坑之后，我在新代码里基本统一用 `ref`——`.value` 写起来啰嗦，但行为一致，不需要记边界情况。
+
+**唯一还会用 `reactive` 的场景是表单**，字段多的时候不用到处写 `.value`：
+
+```js
+const form = reactive({
+  username: '',
+  password: '',
+  rememberMe: false,
+})
+
+// 直接 form.username，不用 form.username.value
+function submit() {
+  if (!form.username || !form.password) return
+  login(form.username, form.password, form.rememberMe)
+}
+
+// 重置表单
+function reset() {
+  Object.assign(form, { username: '', password: '', rememberMe: false })
+}
+```
+
+---
+
+## 组件通信
+
+**父 → 子：props**
+
+```vue
+<!-- 父组件 -->
+<UserCard :user="currentUser" :editable="true" />
+
+<!-- 子组件 -->
+<script setup lang="ts">
+const props = defineProps<{
+  user: User
+  editable?: boolean
+}>()
+</script>
+```
+
+**子 → 父：emit**
+
+```vue
+<!-- 子组件 -->
+<script setup lang="ts">
+const emit = defineEmits<{
+  save: [user: User]
+  cancel: []
+}>()
+
+function handleSave() {
+  emit('save', updatedUser)
+}
+</script>
+
+<!-- 父组件 -->
+<UserCard @save="onUserSave" @cancel="showCard = false" />
+```
+
+**跨多层：provide / inject**
+
+一层层传 props 很繁琐，而且中间层组件根本不需要这个数据，只是充当"搬运工"。这种情况用 provide / inject：
+
+```vue
+<!-- 祖先组件（Layout 或 App.vue） -->
+<script setup>
+const theme = ref('dark')
+const locale = ref('zh')
+
+provide('theme', readonly(theme))            // readonly 防止后代直接改
+provide('setTheme', (t) => theme.value = t)
+provide('locale', readonly(locale))
+</script>
+
+<!-- 任意层级的后代组件 -->
+<script setup>
+const theme = inject('theme')          // 不需要知道 theme 是哪一层提供的
+const setTheme = inject('setTheme')
+const locale = inject('locale', 'zh')  // 第二个参数是默认值
+</script>
+```
+
+**跨页面全局状态：Pinia**
+
+```js
+// stores/user.ts
+export const useUserStore = defineStore('user', () => {
+  const info = ref<UserInfo | null>(null)
+  const isLogin = computed(() => !!info.value)
+
+  async function fetchUserInfo() {
+    info.value = await userApi.getInfo()
+  }
+
+  function logout() {
+    info.value = null
+    router.push('/login')
+  }
+
+  return { info, isLogin, fetchUserInfo, logout }
+})
+
+// 任意组件里直接用
+const userStore = useUserStore()
+if (!userStore.isLogin) router.push('/login')
+```
+
+---
+
+## nextTick
+
+Vue 的 DOM 更新是异步批处理的——数据变了，DOM 不会立刻更新，而是等当前"微任务队列"跑完再统一更新。
+
+这导致一个常见问题：**改了数据，立刻读 DOM，还是旧的**。
+
+```vue
+<script setup>
+const list = ref([])
+const listEl = ref(null)
+
+async function addMessage(msg: string) {
+  list.value.push(msg)
+
+  // ❌ 这时候 DOM 还没更新，scrollHeight 还是旧的
+  listEl.value.scrollTop = listEl.value.scrollHeight
+
+  await nextTick()  // 等 Vue 把 DOM 更新完
+
+  // ✅ 现在拿到的是最新的高度
+  listEl.value.scrollTop = listEl.value.scrollHeight
+}
+
+// 另一个场景：动态渲染后操作 DOM（比如让输入框聚焦）
+async function showInput() {
+  showInputField.value = true
+  await nextTick()
+  inputEl.value?.focus()  // v-if 刚变 true，没有 nextTick 的话 inputEl 还是 null
+}
+</script>
+```
+
+---
+
+## key 的两个用途
+
+**用途一：列表渲染时帮 Vue 识别节点**
+
+不加 key 或用 index 做 key，Vue 用位置来复用节点。列表顺序变了时会出问题——节点的 DOM 状态（输入框内容、勾选状态）跟数据对不上。
+
+```vue
+<!-- ❌ 用 index：删了第一条，后面的节点会被复用，可能出现状态错乱 -->
+<li v-for="(item, index) in list" :key="index">{{ item.name }}</li>
+
+<!-- ✅ 用唯一 id：每个节点和数据严格对应 -->
+<li v-for="item in list" :key="item.id">{{ item.name }}</li>
+```
+
+**用途二：强制重新挂载组件**
+
+有时候切了数据源，但组件内部状态需要完全重置。手动 reset 每个 ref 容易漏，改 key 更彻底：
+
+```vue
+<!-- userId 变了 → key 变了 → Vue 卸载旧组件、挂载新组件 → 内部状态全部重置 -->
+<UserProfile :key="userId" :userId="userId" />
+
+<!-- 表单切换了不同的数据，需要完全重置 -->
+<OrderForm :key="orderId" :orderId="orderId" />
+```
+
+账号切换、详情页数据切换、表单数据源切换——这个技巧比手动重置省事很多。

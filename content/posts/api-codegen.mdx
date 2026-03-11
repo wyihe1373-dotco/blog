@@ -1,58 +1,101 @@
 ---
 title: "OpenAPI → TypeScript：H5 项目的接口自动化实践"
-description: "200+ 条接口靠手写维护到底有多痛？从 API 文档自动生成强类型函数的选型思路、踩坑过程与最终方案"
+description: "200+ 条接口靠手写维护到底有多痛？从 API 文档自动生成强类型函数的选型思路、搭建过程与日常工作流"
 date: "2025-09-15"
 tags: ["TypeScript", "代码生成", "工程化", "OpenAPI"]
 ---
 
-## 技术选型
+## 为什么要做这件事
 
-接口层代码生成主流有几个方向：
-
-- **swagger-codegen / openapi-generator**：Java 生态，生成的 TypeScript 质量参差不齐，定制困难
-- **手写类型 + 运行时校验（zod）**：类型准确，但还是要跟着接口文档手动维护
-- **`@ts-tool/ts-codegen-core`**：基于 OpenAPI Spec 直接生成调用函数 + 类型，支持白名单过滤，生成产物是纯 TypeScript
-
-选第三个方案的原因：生成的是**调用函数**，不是单纯的类型定义。业务代码直接 `import { getFundList }` 用，函数签名本身就是文档，不需要再看接口文档查参数名。
-
----
-
-## 为了解决什么问题
-
-项目有 36+ 个 H5 app，每个 app 早期都自己维护 `api/` 目录：
+项目有 36+ 个 H5 app，每个 app 早期都自己维护一个 `api/` 目录：
 
 ```typescript
-// apps/fund/api/fund.ts — 各 app 各自手写
+// apps/fund/api/fund.ts — 手写维护
 export const getFundList = (params: { account_id: string }) =>
   axios.post<{ list: Fund[] }>('/v1/fund/list', params)
-
-// 类型是手写的，后端改字段名时这里不会报错
-// 直到运行时才发现 data.items 变成了 data.list
 ```
 
-随着接口规模到 200+ 条，几个问题积累到无法忽视：
+接口少的时候还好，规模到 200+ 条之后，几个问题积累到无法忽视：
 
-1. **类型漂移**：后端改了字段名或类型，前端往往几周后才在运行时发现
-2. **重复样板**：每个 app 都在写相同的 `params → axios → response` 封装
-3. **跨 app 不一致**：同一个接口，不同 app 里的参数命名、错误处理方式都不一样
+- **类型漂移**：后端改了字段名，前端这里不会报错，往往几周后才在运行时发现 `data.items` 变成了 `data.list`
+- **重复样板**：每个 app 都在写相同的 `params → axios → response` 封装，格式也不统一
+- **同一接口多份定义**：同一个 `/v1/member/info`，不同 app 里的参数命名、响应类型都不一样
 
----
+## 选型
 
-## 实际开发中碰到的问题
+主流方向：
 
-### 问题一：全量生成太重，每个 app 只用一部分接口
+- **swagger-codegen / openapi-generator**：Java 生态，生成的 TypeScript 代码质量参差不齐，定制困难
+- **openapi-typescript**：只生成类型定义，请求函数还是要手写
+- **`@ts-tool/ts-codegen-core`**：基于 OpenAPI Spec 直接生成**调用函数 + 类型**，支持白名单过滤，生成产物是纯 TypeScript
 
-API 文档平台有几百个接口，如果全量生成，产物文件会非常大，而每个 app 实际只依赖其中一小部分。
+选第三个的原因：生成的是**调用函数**，不是单纯的类型定义。业务代码直接 `import { getFundList }` 用，函数签名本身就是文档，参数和响应类型全程有提示，不需要再查接口文档。
 
-解法是在 `client.config.js` 里维护白名单，生成时只包含列出的路径：
+## 从零搭建
+
+### 第一步：安装依赖
+
+在 monorepo 的 `packages/client` 包里集中管理：
+
+```bash
+yarn add @ts-tool/ts-codegen-core prompts axios lodash chalk
+```
+
+### 第二步：封装 createRequest
+
+生成的代码依赖一个 `createRequest` 工厂函数，负责实际的请求逻辑。这里封装了项目里的特殊逻辑——在 App 环境里走 JSBridge (`lbRequest`)，其他环境走 axios：
+
+```typescript
+// src/createRequest.ts
+export const createRequestWithInstance = (instance: AxiosInstance) => {
+  return <TReq, TResp extends { code: number; data: any; message: string }>(
+    operationID: string,
+    requestConfigCreator: (args: TReq) => AxiosRequestConfig
+  ) => {
+    const request = (args: TReq, customConfig?: CustomConfig) => {
+      return new Promise<[null, TResp['data']] | [RequestError, null]>(resolve => {
+        const config = requestConfigCreator(args)
+
+        // App 环境走 JSBridge，非 App 环境走 axios
+        if (window.WhaleSDK.Env.isWhaleApp) {
+          lbRequest(config, { operationID, ...customConfig })
+            .then(resp => resolve(resp))
+          return
+        }
+
+        instance.request<TResp>(config).then(res => {
+          if (res.data.code === 0) {
+            resolve([null, res.data.data])
+          } else {
+            resolve([{ code: res.data.code, message: res.data.message, operationID }, null])
+          }
+        }).catch(err => {
+          resolve([{ code: 'crash', message: err.message, operationID }, null])
+        })
+      })
+    }
+    return request
+  }
+}
+
+export const createRequest = createRequestWithInstance(axiosInstance)
+```
+
+返回值统一是 `[error, data]` 的 Go 风格元组，不用 try/catch，调用侧判断 `if (err) return` 就行。
+
+### 第三步：配置白名单
+
+在 `client.config.js` 里列出这个项目用到的接口路径，生成时只包含这些：
 
 ```javascript
+// client.config.js
 module.exports = {
   whiteList: [
-    '/v1/fund/list',
-    '/v1/fund/order/submit',
-    '/v1/fund/holding/list',
     '/v1/member/info',
+    '/v2/member/info',
+    '/v1/fund/list',
+    '/v1/fund/holding/list',
+    '/v1/fund/order/submit',
     // ... 约 200 条
   ]
 }
@@ -60,76 +103,171 @@ module.exports = {
 
 白名单本身也是文档——一眼能看出这个项目依赖哪些接口。
 
-### 问题二：多网关场景
+### 第四步：创建生成脚本
 
-桌面端有独立的 SaaS 网关（鉴权逻辑不同，接口路径也不同），不能和 portal 网关混用。最终用两个配置文件分别生成到不同目录：
-
-```javascript
-const gateways = [
-  { name: 'portal', projectId: 'xxx', whiteList },
-  { name: 'saas',   projectId: 'yyy', whiteList: saasWhiteList },
-]
-await codegen({ gateways, headers: { Authorization: `Bearer ${API_DOC_TOKEN}` } })
-```
-
-### 问题三：响应类型在调用侧不好引用
-
-生成的函数有完整的泛型类型，但调用侧如果要声明变量类型，需要手写一遍响应结构——等于部分类型还是手写的。
-
-解法是提供两个类型工具，从函数签名里反向提取：
-
-```typescript
-// 提取响应类型
-export type RequestResponseType<T extends (...args: any[]) => any> =
-  Exclude<Awaited<ReturnType<T>>['1'], null>
-
-// 提取请求参数类型
-export type RequestParamsType<T extends (...args: any[]) => any> =
-  Exclude<Parameters<T>[0] extends { requestBody?: object }
-    ? Parameters<T>[0]['requestBody']
-    : Parameters<T>[0],
-  undefined>
-```
-
----
-
-## 解决方案：一条命令同步所有接口
+`tools/gen.js` 是整个流程的入口：
 
 ```javascript
-// packages/client/tools/gen.js
+// tools/gen.js
 const { codegen } = require('@ts-tool/ts-codegen-core')
 const { whiteList } = require('../client.config')
+const prompts = require('prompts')
 
-await codegen({
-  gateways: [{ name: 'portal', whiteList }],
-  headers: { Authorization: `Bearer ${API_DOC_TOKEN}` }
-})
+// 首次运行时交互式输入 API 文档平台的 Token，保存到本地
+async function checkSecret() {
+  if (fs.existsSync('.eosecret')) {
+    return fs.readFileSync('.eosecret', 'utf-8')
+  }
+  const { value } = await prompts({ type: 'text', name: 'value', message: '输入 Eo-Secret-Key' })
+  fs.writeFileSync('.eosecret', value)
+  return value
+}
+
+async function main() {
+  const secret = await checkSecret()
+
+  // 1. 从 API 文档平台拉取 Swagger v2 JSON
+  const res = await axios.post(API_EXPORT_URL, {}, {
+    params: { space_id, project_id, export_file_type: 'swagger_v2_json' },
+    headers: { 'Eo-Secret-Key': secret }
+  })
+
+  // 2. 按白名单过滤 + 格式化（统一 operationId 命名、规范响应结构）
+  const formatted = await formatJson({ json: res.data, whiteList, name: 'portal' })
+  fs.writeFileSync('api-json/eolink.portal.json', JSON.stringify(formatted, null, 2))
+
+  // 3. 调用 codegen 生成 TypeScript 文件
+  codegen({
+    outputFolder: 'src',
+    requestCreateLib: './createRequest',
+    requestCreateMethod: 'createRequest',
+    apiSpecsPaths: [{ path: 'api-json/eolink.portal.json', name: 'gateway/portal/client' }],
+    options: { withComments: true }
+  })
+}
+
+main()
 ```
 
-运行 `yarn workspace @pkgs/client gen` 后，生成的函数长这样：
+### 第五步：配置 package.json script
+
+```json
+{
+  "scripts": {
+    "gen": "node tools/gen.js"
+  }
+}
+```
+
+在 monorepo 里从任意位置运行：
+
+```bash
+yarn workspace @pkgs/client gen
+```
+
+## 生成产物长什么样
+
+运行 `yarn gen` 后，`src/gateway/portal/client.ts` 自动生成，每个接口一个函数：
 
 ```typescript
 // 自动生成，勿手改
-export const getFundHoldingList = createRequest<
-  { requestBody?: { account_id: string; page?: number } },
-  { code: number; data: { list: FundHolding[]; total: number }; message: string }
->('getFundHoldingList', ({ requestBody }) => ({
+/**
+ * 获取基金持仓列表
+ * /v1/fund/holding/list
+ */
+export const postV1FundHoldingList = createRequest<
+  { requestBody?: { account_id: string; page?: number; page_size?: number } },
+  { code: number; data: { list: IFundHolding[]; total: number }; message: string }
+>('postV1FundHoldingList', ({ requestBody }) => ({
   url: `/v1/fund/holding/list`,
   method: 'POST',
   data: requestBody,
 }))
 ```
 
-业务侧调用，类型全程推导，不需要手写任何 interface：
+业务侧调用：
 
 ```typescript
-import { getFundHoldingList, type RequestResponseType } from '@pkgs/client'
+import { postV1FundHoldingList } from '@pkgs/client'
 
-type HoldingResp = RequestResponseType<typeof getFundHoldingList>
-// HoldingResp = { list: FundHolding[]; total: number }
+// 参数、响应类型全程推导，不需要手写任何 interface
+const [err, data] = await postV1FundHoldingList({
+  requestBody: { account_id }
+})
 
-const [err, data] = await getFundHoldingList({ requestBody: { account_id } })
+if (err) {
+  toast.error(err.message)
+  return
+}
+
 // data.list / data.total 有完整类型提示
+setList(data.list)
 ```
 
-后端每次迭代接口后，前端跑一次 `yarn gen`，TypeScript 编译器会立刻标出所有受影响的调用点——类型漂移从根本上消除，目前覆盖 200+ 条接口。
+## 响应类型怎么复用
+
+有时候需要把响应类型赋给变量。不用手写，用工具类型从函数签名反向提取：
+
+```typescript
+import type { RequestResponseType, RequestParamsType } from '@pkgs/client'
+import { postV1FundHoldingList } from '@pkgs/client'
+
+// 提取响应的 data 类型
+type HoldingData = RequestResponseType<typeof postV1FundHoldingList>
+// → { list: IFundHolding[]; total: number }
+
+// 提取请求参数类型
+type HoldingParams = RequestParamsType<typeof postV1FundHoldingList>
+// → { account_id: string; page?: number; page_size?: number }
+```
+
+这两个工具类型的实现：
+
+```typescript
+// 从返回值元组里拿 data 类型（索引 1）
+export type RequestResponseType<T extends (...args: any[]) => any> =
+  Exclude<Awaited<ReturnType<T>>[1], null>
+
+// 从参数里拿 requestBody 类型
+export type RequestParamsType<T extends (...args: any[]) => any> =
+  Exclude<
+    Parameters<T>[0] extends { requestBody?: object }
+      ? Parameters<T>[0]['requestBody']
+      : Parameters<T>[0],
+    undefined
+  >
+```
+
+## 踩过的坑
+
+**坑一：全量生成产物太大**
+
+API 文档平台有几百个接口，全量生成的 `client.ts` 会很���，而每个 app 实际只用一小部分。白名单解决了这个问题。
+
+**坑二：多网关场景**
+
+桌面端有独立的 SaaS 网关，鉴权逻辑和接口路径都不同，不能和 portal 网关混用。最终用两个 config 文件分别生成到不同目录：
+
+```javascript
+const gateways = [
+  { name: 'portal', project_id: 'apis',    whiteList },
+  { name: 'saas',   project_id: 'saasapi', whiteList: saasWhiteList },
+]
+```
+
+生成到 `src/gateway/portal/client.ts` 和 `src/gateway/saas/client.ts`，互不干扰。
+
+**坑三：operationId 命名冲突**
+
+原始 Swagger 里有些接口的 operationId 是空的或重复的，codegen 会报错。解法是在 `formatJson` 里统一按 `method + path` 生成 operationId，规避了文档不规范的问题。
+
+## 日常工作流
+
+落地后的开发流程：
+
+1. 后端出接口文档（在内部 eolink 平台）
+2. 前端运行 `yarn workspace @pkgs/client gen`
+3. TypeScript 编译器标出所有受影响的调用点（新增字段有提示，删除/改名字段报错）
+4. 修复类型错误，功能联调
+
+后端每次迭代后，前端跑一次 `yarn gen`，类型漂移从根本上消除。目前覆盖 200+ 条接口，几十个 app 共用同一套生成产物。

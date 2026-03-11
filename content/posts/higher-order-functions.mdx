@@ -120,6 +120,69 @@ const completedTotal = records
 const validRecords = records.filter(r => r.status !== 'failed')
 ```
 
+## reduce：先搞懂参数
+
+`reduce` 的完整签名：
+
+```js
+array.reduce(callback(accumulator, currentValue, currentIndex, array), initialValue)
+```
+
+四个参数，常用的是前两个：
+
+| 参数 | 含义 |
+|------|------|
+| `accumulator` | 累积值，上一次回调返回的结果（第一次是 `initialValue`） |
+| `currentValue` | 当前元素 |
+| `currentIndex` | 当前元素的索引（可选） |
+| `array` | 原数组本身（可选，很少用） |
+| `initialValue` | 初始值，决定 `accumulator` 第一次是什么 |
+
+**initialValue 非常关键**，它决定了 `acc` 的初始类型，也决定了最终的输出类型：
+
+```js
+const nums = [1, 2, 3, 4]
+
+// initialValue 是 0 → 累加求和，最终是 number
+nums.reduce((acc, n) => acc + n, 0)   // 10
+
+// initialValue 是 [] → 累积数组，最终是 array
+nums.reduce((acc, n) => {
+  acc.push(n * 2)
+  return acc
+}, [])  // [2, 4, 6, 8]
+
+// initialValue 是 {} → 累积对象，最终是 object
+nums.reduce((acc, n) => {
+  acc[`key_${n}`] = n * n
+  return acc
+}, {})  // { key_1: 1, key_2: 4, key_3: 9, key_4: 16 }
+```
+
+每次回调**必须 return acc**，否则下一次的 `acc` 会是 `undefined`，这是最常见的错误：
+
+```js
+// ❌ 忘记 return，acc 第二次开始就是 undefined
+nums.reduce((acc, n) => {
+  acc.push(n)  // 没有 return
+}, [])
+
+// ✅ 一定要 return
+nums.reduce((acc, n) => {
+  acc.push(n)
+  return acc  // ← 不能省
+}, [])
+```
+
+不传 `initialValue` 时，第一个元素自动作为初始值，循环从第二个元素开始，只适合类型统一的简单累加，其他情况都建议明确传：
+
+```js
+// 可以不传，但只适合这种简单场景
+[1, 2, 3].reduce((acc, n) => acc + n)  // 6，第一次 acc=1，n=2
+```
+
+---
+
 ## reduce：把数组转成对象（O(1) 查找）
 
 这是我用 `reduce` 最多的场景。

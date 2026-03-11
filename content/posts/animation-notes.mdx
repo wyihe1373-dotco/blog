@@ -1,0 +1,293 @@
+---
+title: "这个博客用到的动画效果整理"
+description: "framer-motion 为主，CSS 动画为辅——把项目里实际用过的动画模式汇总一下，方便以后复用"
+date: "2026-03-11"
+tags: ["framer-motion", "CSS", "学习笔记"]
+---
+
+做这个博客用了不少动画，趁现在把用到的模式整理一下。主要是 framer-motion，少量 CSS 动画。
+
+---
+
+## CSS 动画
+
+### animate-pulse — 背景光晕
+
+首页 Hero 区域的三个背景光斑用的 Tailwind 内置类，配上不同 `animationDelay` 形成错开的呼吸感：
+
+```tsx
+// components/Hero/index.tsx
+<div
+  className="absolute top-10 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-pulse"
+  style={{ animationDelay: '0s', animationDuration: '4s' }}
+/>
+<div
+  className="absolute top-20 right-1/4 w-64 h-64 bg-accent/15 rounded-full blur-3xl animate-pulse"
+  style={{ animationDelay: '1.5s', animationDuration: '5s' }}
+/>
+```
+
+### @keyframes shimmer — 渐变文字流光
+
+全局样式里定义了一个 shimmer 动画，给强调文字加流光效果：
+
+```css
+/* app/globals.css */
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.shimmer-text {
+  background: linear-gradient(90deg, #6366f1, #22d3ee, #a855f7, #6366f1);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 3s linear infinite;
+}
+```
+
+---
+
+## framer-motion 基础用法
+
+### motion.div + animate/initial — 淡入滑动
+
+最常见的进场动画，组件挂载时从下方淡入：
+
+```tsx
+import { motion } from 'framer-motion'
+
+<motion.div
+  initial={{ opacity: 0, y: 30 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 0.6 }}
+>
+  内容
+</motion.div>
+```
+
+博客里大量组件（Stats、Skills、Contact）都是这个模式，加个 `delay` 错开出现时机。
+
+### variants + staggerChildren — 列表错开入场
+
+技能列表、项目卡片这类多个子元素依次出现，用 variants 统一管理状态，父组件控制 stagger：
+
+```tsx
+// components/Skills/index.tsx
+const container = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.08 } }
+}
+
+const item = {
+  hidden: { opacity: 0, x: -40 },
+  visible: { opacity: 1, x: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } }
+}
+
+<motion.ul variants={container} initial="hidden" animate="visible">
+  {skills.map(skill => (
+    <motion.li key={skill} variants={item}>{skill}</motion.li>
+  ))}
+</motion.ul>
+```
+
+`staggerChildren: 0.08` 表示每个子元素延迟 80ms 开始动画，不需要手动写 `delay: i * 0.08`。
+
+---
+
+## layoutId — 共享布局动画
+
+当同一个 `layoutId` 在不同位置出现时，framer-motion 会自动补间动画，不需要手写位移。
+
+**导航下划线**（跟随激活菜单项）：
+
+```tsx
+// components/Navigation/index.tsx
+{activeSection === item.id && (
+  <motion.span
+    layoutId="nav-underline"
+    className="absolute -bottom-1 left-0 right-0 h-0.5 bg-gradient-to-r from-primary to-accent"
+    transition={{ type: 'spring', stiffness: 375, damping: 30 }}
+  />
+)}
+```
+
+**博客分类 tab 指示器**（Carousel 里的标签切换）：
+
+```tsx
+// components/Blog/Carousel.tsx
+{active === label && (
+  <motion.span
+    layoutId="cat-pill"
+    className="absolute inset-0 rounded-full bg-primary/20 border border-primary/30"
+    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+  />
+)}
+```
+
+两处都是 spring 动画，stiffness 380 左右，弹性但不过分。
+
+---
+
+## AnimatePresence — 元素消失时的过渡
+
+默认情况下 React 组件卸载是瞬间消失，`AnimatePresence` 让卸载也有动画：
+
+```tsx
+import { AnimatePresence, motion } from 'framer-motion'
+
+<AnimatePresence mode="wait">
+  <motion.p
+    key={step}                        // key 变化触发退出 + 进入
+    initial={{ opacity: 0, y: 6 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: -6 }}      // 离开时向上淡出
+    transition={{ duration: 0.25 }}
+  >
+    {steps[step].desc}
+  </motion.p>
+</AnimatePresence>
+```
+
+事件循环图解里的步骤说明文字就是这个。`mode="wait"` 表示等旧元素退出完再让新元素进入。
+
+博客 Carousel 用的是 `mode="popLayout"`，卡片移除时平滑收缩，不影响其他卡片的位置。
+
+---
+
+## useScroll + useTransform + useSpring — 滚动视差
+
+Projects 区域的标题随滚动做视差位移：
+
+```tsx
+// components/Projects/index.tsx
+import { useScroll, useTransform, useSpring } from 'framer-motion'
+
+const { scrollY } = useScroll()
+const rawY = useTransform(scrollY, [0, 500], [30, -30])  // 滚动 500px → 移动 60px
+const smoothY = useSpring(rawY, { stiffness: 80, damping: 20 })  // 加弹簧缓动
+
+<motion.div style={{ y: smoothY }}>
+  标题内容
+</motion.div>
+```
+
+`useTransform` 把滚动位置映射成位移值，`useSpring` 再加上物理弹簧，让运动有惯性感。
+
+---
+
+## 旋转边框 — Blog Carousel 卡片
+
+卡片激活时的旋转光圈效果：父容器设置 `overflow-hidden`，内部一个 `conic-gradient` 的 div 持续旋转：
+
+```tsx
+// components/Blog/Carousel.tsx
+<div className="relative overflow-hidden p-px rounded-2xl">
+  {isActive && (
+    <motion.div
+      className="absolute inset-[-100%] z-0"
+      style={{
+        background: 'conic-gradient(from 0deg, #6366f1, #8b5cf6, #22d3ee, #6366f1)',
+      }}
+      animate={{ rotate: 360 }}
+      transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+    />
+  )}
+  {/* 卡片内容，背景不透明盖住大部分渐变，只露出 1px 边框 */}
+  <div className="relative z-10 bg-[rgba(7,7,24,0.95)] rounded-2xl p-4">
+    内容
+  </div>
+</div>
+```
+
+`p-px` 是关键——让外层比内层宽 1px，旋转渐变从缝隙透出来，形成边框效果。
+
+---
+
+## 鼠标交互：磁性按钮
+
+联系区域的按钮会被鼠标轻微吸引，用 spring 动画跟随鼠标偏移：
+
+```tsx
+// components/MagneticButton/index.tsx
+const [pos, setPos] = useState({ x: 0, y: 0 })
+
+function onMouseMove(e: MouseEvent) {
+  const rect = ref.current.getBoundingClientRect()
+  const centerX = rect.left + rect.width / 2
+  const centerY = rect.top + rect.height / 2
+  setPos({
+    x: (e.clientX - centerX) * 0.35,  // 35% 的偏移量，不要太夸张
+    y: (e.clientY - centerY) * 0.35,
+  })
+}
+
+<motion.div
+  animate={{ x: pos.x, y: pos.y }}
+  transition={{ type: 'spring', stiffness: 200, damping: 15, mass: 0.5 }}
+>
+  按钮内容
+</motion.div>
+```
+
+stiffness 200 + damping 15 + mass 0.5，比较轻弹，有点跟手感。
+
+---
+
+## 鼠标交互：3D 卡片倾斜
+
+项目卡片悬停时的 3D 透视倾斜，直接操作 DOM style（不过 framer-motion），配合 CSS transition 实现流畅：
+
+```tsx
+// components/Projects/index.tsx
+function onMouseMove(e: React.MouseEvent) {
+  const rect = el.getBoundingClientRect()
+  const x = (e.clientX - rect.left) / rect.width - 0.5   // -0.5 ~ 0.5
+  const y = (e.clientY - rect.top) / rect.height - 0.5
+
+  el.style.transform = `
+    perspective(800px)
+    rotateY(${x * 18}deg)
+    rotateX(${-y * 12}deg)
+    translateZ(20px)
+    scale(1.03)
+  `
+}
+
+function onMouseLeave() {
+  el.style.transform = ''  // 清空，CSS transition 负责回弹
+}
+```
+
+CSS 里设置 `transition: transform 0.22s ease`，鼠标移开时自动缓动回原位。
+
+---
+
+## 汉堡菜单变形
+
+移动端导航按钮：三条线变成 X 号，每条线单独控制旋转和透明度：
+
+```tsx
+// components/Navigation/index.tsx
+<motion.span animate={open ? { rotate: 45, y: 6 }  : { rotate: 0, y: 0 }}  />
+<motion.span animate={open ? { opacity: 0, scaleX: 0 } : { opacity: 1, scaleX: 1 }} />
+<motion.span animate={open ? { rotate: -45, y: -6 } : { rotate: 0, y: 0 }} />
+```
+
+---
+
+## prefers-reduced-motion
+
+所有动画都应该尊重用户设置，globals.css 里有兜底：
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+```
+
+framer-motion 也会自动检测这个媒体查询，关闭过渡动画。
