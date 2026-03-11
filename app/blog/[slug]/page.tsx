@@ -3,6 +3,7 @@ import path from 'path'
 import matter from 'gray-matter'
 import { MDXRemote } from 'next-mdx-remote/rsc'
 import PostNav from './PostNav'
+import EventLoopDiagram from '@/components/Blog/EventLoopDiagram'
 
 export function generateStaticParams() {
   const files = fs.readdirSync(path.join(process.cwd(), 'content/posts'))
@@ -72,6 +73,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
                   <pre {...props}>{children}</pre>
                 </div>
               ),
+              EventLoopDiagram,
             }}
           />
         </article>
