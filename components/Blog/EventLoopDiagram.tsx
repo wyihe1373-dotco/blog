@@ -82,7 +82,7 @@ export default function EventLoopDiagram() {
             <button
               key={s.id}
               onClick={() => { setStep(i); setRunning(false) }}
-              className={`w-2 h-2 rounded-full transition-all duration-300 ${
+              className={`w-2 h-2 rounded-full transition-all duration-300 cursor-pointer ${
                 step === i ? 'bg-white scale-125' : 'bg-white/20 hover:bg-white/40'
               }`}
               title={s.label}
@@ -221,20 +221,20 @@ export default function EventLoopDiagram() {
         <div className="flex gap-2">
           <button
             onClick={prev}
-            className="text-xs font-mono px-3 py-1.5 rounded-md border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-colors"
+            className="text-xs font-mono px-3 py-1.5 rounded-md border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-colors cursor-pointer"
           >
             ← 上一步
           </button>
           <button
             onClick={next}
-            className="text-xs font-mono px-3 py-1.5 rounded-md border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-colors"
+            className="text-xs font-mono px-3 py-1.5 rounded-md border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-colors cursor-pointer"
           >
             下一步 →
           </button>
         </div>
         <button
           onClick={() => setRunning(r => !r)}
-          className={`text-xs font-mono px-3 py-1.5 rounded-md border transition-colors ${
+          className={`text-xs font-mono px-3 py-1.5 rounded-md border transition-colors cursor-pointer ${
             running
               ? 'border-white/20 text-white bg-white/8 hover:bg-white/12'
               : 'border-white/10 text-slate-400 hover:text-white hover:border-white/20'
