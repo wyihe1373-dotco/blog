@@ -93,7 +93,8 @@ export default function EventLoopDiagram() {
 
       {/* 三栏 + 箭头 */}
       <div className="relative grid grid-cols-3 gap-3 mb-1">
-        <Panel label="调用栈" sublabel="Call Stack" active={active === 'stack'} color="indigo">
+        <Panel label="调用栈" sublabel="Call Stack" active={active === 'stack'} color="indigo"
+          onClick={() => { setStep(0); setRunning(false) }}>
           {STACK_ITEMS.map((item, i) => (
             <motion.div
               key={item.label}
@@ -109,7 +110,8 @@ export default function EventLoopDiagram() {
           ))}
         </Panel>
 
-        <Panel label="微任务队列" sublabel="VIP 快取窗口" active={active === 'micro'} color="cyan">
+        <Panel label="微任务队列" sublabel="VIP 快取窗口" active={active === 'micro'} color="cyan"
+          onClick={() => { setStep(1); setRunning(false) }}>
           {MICRO_ITEMS.map((item, i) => (
             <motion.div
               key={item.label}
@@ -126,7 +128,8 @@ export default function EventLoopDiagram() {
           ))}
         </Panel>
 
-        <Panel label="宏任务队列" sublabel="普通出餐窗口" active={active === 'macro'} color="violet">
+        <Panel label="宏任务队列" sublabel="普通出餐窗口" active={active === 'macro'} color="violet"
+          onClick={() => { setStep(2); setRunning(false) }}>
           {MACRO_ITEMS.map((item, i) => (
             <motion.div
               key={item.label}
@@ -248,13 +251,14 @@ export default function EventLoopDiagram() {
 }
 
 function Panel({
-  label, sublabel, active, color, children,
+  label, sublabel, active, color, children, onClick,
 }: {
   label: string
   sublabel: string
   active: boolean
   color: 'indigo' | 'cyan' | 'violet'
   children: React.ReactNode
+  onClick?: () => void
 }) {
   const styles = {
     indigo: { border: active ? 'border-indigo-500/50' : 'border-white/8', bg: active ? 'bg-indigo-500/6' : 'bg-white/2', label: 'text-indigo-400' },
@@ -264,9 +268,11 @@ function Panel({
 
   return (
     <motion.div
+      onClick={onClick}
       animate={{ scale: active ? 1.01 : 1 }}
       transition={{ duration: 0.3 }}
-      className={`rounded-lg border ${styles.border} ${styles.bg} p-3 transition-colors duration-400`}
+      className={`rounded-lg border ${styles.border} ${styles.bg} p-3 transition-colors duration-400 cursor-pointer`}
+      title={`点击跳到「${label}」步骤`}
     >
       <div className={`text-xs font-semibold ${styles.label} mb-0.5`}>{label}</div>
       <div className="text-[10px] text-slate-600 mb-2">{sublabel}</div>
