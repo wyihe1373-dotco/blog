@@ -15,7 +15,7 @@ function Scene({ isMobile }: { isMobile: boolean }) {
 
   const colorMap = useLoader(
     TextureLoader,
-    isMobile ? `${BASE}/earth-color-mobile.jpg` : `${BASE}/earth-color.jpg`
+    isMobile ? `${BASE}/earth-map-mobile.jpg` : `${BASE}/earth-map.jpg`
   )
   const cloudsMap = useLoader(TextureLoader, `${BASE}/earth-clouds.png`)
 
