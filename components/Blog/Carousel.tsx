@@ -31,9 +31,17 @@ export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
     sessionStorage.setItem('blog-tab', label)
   }
 
+  // 每篇文章分配到第一个匹配的分类，避免在多个 tab 重复出现
+  const assignCategory = (post: PostMeta): string => {
+    for (const cat of CATEGORIES.slice(1)) {
+      if (cat.tags.some(t => post.tags.includes(t))) return cat.label
+    }
+    return ''
+  }
+
   const filtered = active === '全部'
     ? posts
-    : posts.filter(p => CATEGORIES.find(c => c.label === active)!.tags.some(t => p.tags.includes(t)))
+    : posts.filter(p => assignCategory(p) === active)
 
   return (
     <div ref={ref}>
