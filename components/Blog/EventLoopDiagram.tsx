@@ -92,7 +92,60 @@ export default function EventLoopDiagram() {
       </div>
 
       {/* 三栏 + 箭头 */}
-      <div className="relative grid grid-cols-1 sm:grid-cols-3 gap-3 mb-1">
+
+      {/* 移动端：上下排列 + 向下箭头 */}
+      <div className="sm:hidden flex flex-col gap-3 mb-1">
+        <Panel label="调用栈" sublabel="Call Stack" active={active === 'stack'} color="indigo"
+          onClick={() => { setStep(0); setRunning(false) }}>
+          {STACK_ITEMS.map((item, i) => (
+            <motion.div key={item.label} animate={active === 'stack' ? { backgroundColor: ['rgba(99,102,241,0)', 'rgba(99,102,241,0.15)', 'rgba(99,102,241,0)'] } : {}} transition={{ duration: 0.8, delay: i * 0.15, ease: 'easeInOut' }} className="flex items-center justify-between text-xs font-mono text-indigo-300 py-1 px-1.5 rounded">
+              <span>{item.label}</span>
+              {item.note && <span className="text-[10px] text-indigo-600">{item.note}</span>}
+            </motion.div>
+          ))}
+        </Panel>
+        <AnimatePresence>
+          {active === 'micro' && (
+            <motion.div key="arr-down-micro" initial={{ opacity: 0, scaleY: 0 }} animate={{ opacity: 1, scaleY: 1 }} exit={{ opacity: 0, scaleY: 0 }} style={{ originY: 0 }} className="flex justify-center pointer-events-none">
+              <div className="flex flex-col items-center">
+                <div className="w-px h-4 bg-linear-to-b from-cyan-400 to-cyan-400/30" />
+                <div className="w-0 h-0 border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-[6px] border-t-cyan-400" />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <Panel label="微任务队列" sublabel="VIP 快取窗口" active={active === 'micro'} color="cyan"
+          onClick={() => { setStep(1); setRunning(false) }}>
+          {MICRO_ITEMS.map((item, i) => (
+            <motion.div key={item.label} animate={active === 'micro' ? { x: [0, 6, 0], backgroundColor: ['rgba(34,211,238,0)', 'rgba(34,211,238,0.12)', 'rgba(34,211,238,0)'] } : { x: 0 }} transition={{ duration: 0.6, delay: i * 0.12 }} className="flex items-center justify-between text-xs font-mono text-cyan-300 py-1 px-1.5 rounded">
+              <span>{item.label}</span>
+              <span className="text-[10px] text-cyan-700">{item.note}</span>
+            </motion.div>
+          ))}
+        </Panel>
+        <AnimatePresence>
+          {active === 'macro' && (
+            <motion.div key="arr-down-macro" initial={{ opacity: 0, scaleY: 0 }} animate={{ opacity: 1, scaleY: 1 }} exit={{ opacity: 0, scaleY: 0 }} style={{ originY: 0 }} className="flex justify-center pointer-events-none">
+              <div className="flex flex-col items-center">
+                <div className="w-px h-4 bg-linear-to-b from-violet-400 to-violet-400/30" />
+                <div className="w-0 h-0 border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-[6px] border-t-violet-400" />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <Panel label="宏任务队列" sublabel="普通出餐窗口" active={active === 'macro'} color="violet"
+          onClick={() => { setStep(2); setRunning(false) }}>
+          {MACRO_ITEMS.map((item, i) => (
+            <motion.div key={item.label} animate={active === 'macro' ? { x: [0, 6, 0], backgroundColor: ['rgba(167,139,250,0)', 'rgba(167,139,250,0.12)', 'rgba(167,139,250,0)'] } : { x: 0 }} transition={{ duration: 0.6, delay: i * 0.12 }} className="flex items-center justify-between text-xs font-mono text-violet-300 py-1 px-1.5 rounded">
+              <span>{item.label}</span>
+              <span className="text-[10px] text-violet-700">{item.note}</span>
+            </motion.div>
+          ))}
+        </Panel>
+      </div>
+
+      {/* 桌面端：三列网格 + 水平箭头 */}
+      <div className="hidden sm:grid sm:relative sm:grid-cols-3 sm:gap-3 sm:mb-1">
         <Panel label="调用栈" sublabel="Call Stack" active={active === 'stack'} color="indigo"
           onClick={() => { setStep(0); setRunning(false) }}>
           {STACK_ITEMS.map((item, i) => (
@@ -154,7 +207,7 @@ export default function EventLoopDiagram() {
               animate={{ opacity: 1, scaleX: 1 }}
               exit={{ opacity: 0, scaleX: 0 }}
               style={{ originX: 1 }}
-              className="hidden sm:flex absolute top-1/2 left-[33.3%] w-[33.3%] -translate-y-1/2 items-center justify-center pointer-events-none"
+              className="absolute top-1/2 left-[33.3%] w-[33.3%] -translate-y-1/2 flex items-center justify-center pointer-events-none"
             >
               <div className="w-full h-px bg-gradient-to-l from-cyan-400 to-transparent relative">
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-0.5 w-0 h-0 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent border-r-[6px] border-r-cyan-400" />
@@ -171,7 +224,7 @@ export default function EventLoopDiagram() {
               animate={{ opacity: 1, scaleX: 1 }}
               exit={{ opacity: 0, scaleX: 0 }}
               style={{ originX: 1 }}
-              className="hidden sm:flex absolute top-1/2 right-0 w-[66.6%] -translate-y-1/2 items-center justify-center pointer-events-none"
+              className="absolute top-1/2 right-0 w-[66.6%] -translate-y-1/2 flex items-center justify-center pointer-events-none"
             >
               <div className="w-full h-px bg-gradient-to-l from-violet-400 to-transparent relative">
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-0.5 w-0 h-0 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent border-r-[6px] border-r-violet-400" />
@@ -181,14 +234,15 @@ export default function EventLoopDiagram() {
         </AnimatePresence>
       </div>
 
+
       {/* 当前步骤说明 */}
       <div className="mt-4 rounded-lg border border-white/5 bg-white/3 p-3">
         <div className="flex items-start gap-3">
           <div className="shrink-0 mt-0.5">
             {active === 'loop' ? (
               <motion.span
-                animate={{ rotate: [0, 360] }}
-                transition={{ duration: 0.8, ease: 'easeInOut' }}
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1.2, ease: 'linear', repeat: Infinity }}
                 className="inline-block text-base"
               >↻</motion.span>
             ) : (
@@ -213,6 +267,14 @@ export default function EventLoopDiagram() {
                 className="text-xs text-slate-400 leading-relaxed"
               >
                 {currentStep.desc}
+                {active === 'loop' && (
+                  <motion.span
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: [0, 1, 0] }}
+                    transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+                    className="ml-2 text-white/50 font-mono"
+                  >→ 回到 ①</motion.span>
+                )}
               </motion.p>
             </AnimatePresence>
           </div>
