@@ -1,159 +1,169 @@
 ---
-title: "Node.js 是干什么的？从零开始聊"
-description: "Node.js 到底是什么、能干什么、怎么用——结合实际项目，口语化说清楚"
+title: "我是怎么从零开始用 Node.js 的"
+description: "不是教程，是我自己的使用路径——从第一次跑 npm 到写脚本、搭服务，踩过的坑和用熟的那些模式"
 date: "2026-03-11"
-tags: ["前端工程", "学习笔记"]
+tags: ["学习笔记", "前端工程"]
 ---
 
-前端写多了，总会碰到 Node.js。但很多人第一反应是：「这不是后端的东西吗？我学它干嘛？」
+说实话，我最开始对 Node.js 完全没概念。刚入门前端的时候，看到 `npm install` 就照着敲，只知道能用，不知道这玩意儿背后跑的是什么。
 
-这篇就是想聊清楚这个问题。
-
----
-
-## Node.js 到底是什么
-
-一句话：**Node.js 让 JavaScript 能在浏览器之外运行。**
-
-浏览器里的 JS 只能操作 DOM、发请求、处理用户交互。但 Node.js 把 JS 的执行环境搬到了服务器（或你的电脑）上，让它能读写文件、操作数据库、启动 HTTP 服务——这些浏览器 JS 做不到的事。
-
-底层是 V8 引擎（就是 Chrome 里跑 JS 的那个），所以语法和你平时写的 JS 完全一样。
+后来项目越做越多，慢慢摸清楚了——**Node.js 就是让 JS 能在浏览器外面跑的环境**。你的电脑、服务器上，都能直接执行 JS 文件。
 
 ---
 
-## 前端为什么要懂 Node.js
+## 我是怎么开始的
 
-你可能每天都在用，只是没意识到：
+最开始真的就是被 npm 带进来的。
 
-- `npm install` — npm 就是跑在 Node.js 上的
-- `npm run dev` — 启动的本地开发服务器，Node.js 进程
-- Webpack、Vite、ESLint、Babel — 这些构建工具全是 Node.js 程序
-- Next.js — 本质上是一个 Node.js 框架，SSR 渲染就在 Node.js 里跑
+`npm run dev`、`npm run build`——这些命令背后其实都是 Node.js 在执行脚本。Vite、Webpack、ESLint 这些工具，全是 Node.js 程序。我发现自己每天都在用，只是没意识到。
 
-这个博客就是 Next.js 项目，在本地跑 `npm run dev`，背后就是 Node.js 在监听文件变化、编译 TypeScript、处理 MDX。
+真正「主动」用 Node.js，是有次需要批量重命名一批图片文件。我本来想用 shell 脚本，但写了几行就头疼了。换成 Node.js 写，十几行搞定，语法还是熟悉的 JS——这是我第一次意识到 Node.js 对前端来说有多顺手。
 
 ---
 
-## 基础用法
+## 我实际用它干了什么
 
-### 读写文件
+### 1. 写构建脚本
+
+这个博客用的是 Next.js 静态导出，构建的时候 Node.js 做了一堆事情：
 
 ```js
+// Next.js 底层大概是这么读文章的
 const fs = require('fs')
+const path = require('path')
 
-// 读文件
-const content = fs.readFileSync('./posts/hello.md', 'utf-8')
-console.log(content)
+const postsDir = path.join(process.cwd(), 'content/posts')
+const files = fs.readdirSync(postsDir)  // 读取所有 .mdx 文件
 
-// 写文件
-fs.writeFileSync('./output.txt', 'Hello Node.js')
+files.forEach(file => {
+  const content = fs.readFileSync(path.join(postsDir, file), 'utf-8')
+  // 解析 frontmatter，提取 title、date、tags...
+})
 ```
 
-浏览器里的 JS 完全做不到这个，但 Node.js 可以直接操作文件系统。
+我 `npm run build` 一下，Node.js 就把所有 MDX 文件读进来、编译成 HTML、生成 `out/` 目录。整个流程就是一个 Node.js 程序在跑。
 
-### 起一个 HTTP 服务
+### 2. 处理图片资源
+
+做这个博客的时候需要把地球贴图转成合适的格式，我写了个简单脚本：
+
+```js
+const { execSync } = require('child_process')
+const fs = require('fs')
+
+// 批量把 png 转 webp
+fs.readdirSync('./public').forEach(file => {
+  if (file.endsWith('.png')) {
+    execSync(`sips -s format webp ./public/${file} --out ./public/${file.replace('.png', '.webp')}`)
+    console.log(`done: ${file}`)
+  }
+})
+```
+
+调用系统命令、读写文件，这种活儿用 Node.js 写比 shell 舒服多了。
+
+### 3. 跑本地服务
+
+有几次需要临时起一个静态文件服务，不想装 Python 的情况下：
+
+```js
+const http = require('http')
+const fs = require('fs')
+const path = require('path')
+
+http.createServer((req, res) => {
+  const file = path.join('./dist', req.url === '/' ? 'index.html' : req.url)
+  if (fs.existsSync(file)) {
+    res.end(fs.readFileSync(file))
+  } else {
+    res.writeHead(404)
+    res.end('not found')
+  }
+}).listen(8080)
+
+console.log('http://localhost:8080')
+```
+
+`node server.js` 直接跑，查完就关。
+
+### 4. 接口 mock
+
+联调前后端经常要等接口，我会本地起一个简单的 mock：
 
 ```js
 const http = require('http')
 
-const server = http.createServer((req, res) => {
-  res.end('Hello World')
-})
+const mockData = {
+  '/api/user': { id: 1, name: '王一贺', role: 'admin' },
+  '/api/posts': [{ id: 1, title: '测试文章' }],
+}
 
-server.listen(3000, () => {
-  console.log('服务跑在 http://localhost:3000')
-})
+http.createServer((req, res) => {
+  res.setHeader('Content-Type', 'application/json')
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.end(JSON.stringify(mockData[req.url] ?? { error: 'not found' }))
+}).listen(3001)
 ```
 
-`node server.js` 跑起来，浏览器访问 3000 端口就能看到响应。Next.js 的 dev server 背后干的就是这件事，只是封装了很多。
+前端直接对着 3001 跑，不用等后端。后来换成 `json-server` 这类工具了，但原理一样。
 
-### 执行脚本
+---
 
-Node.js 最常见的用法之一是写脚本，比如批量处理文件：
+## 踩过的坑
+
+**`require` vs `import`**
+
+Node.js 原本用 CommonJS（`require`），ES Module（`import/export`）是后来才支持的。刚开始经常搞混，在 `.js` 文件里写了 `import` 然后报错。
+
+规律是：文件名 `.mjs` 或者 `package.json` 里设 `"type": "module"` 才能用 `import`，否则用 `require`。现在用 TypeScript + ts-node 就没这个烦恼了。
+
+**异步处理**
+
+Node.js 的文件、网络操作都是异步的，早期没搞清楚经常写出这种代码：
 
 ```js
-// scripts/convert-images.js
-const { execSync } = require('child_process')
-const fs = require('fs')
-const path = require('path')
-
-const dir = './public/images'
-fs.readdirSync(dir).forEach(file => {
-  if (file.endsWith('.png')) {
-    const input = path.join(dir, file)
-    const output = input.replace('.png', '.webp')
-    execSync(`cwebp ${input} -o ${output}`)
-    console.log(`转换完成: ${file}`)
-  }
+// 错误示范：以为是同步的
+fs.readFile('./data.json', (err, data) => {
+  result = JSON.parse(data)
 })
+console.log(result)  // undefined！还没读完呢
 ```
 
-```bash
-node scripts/convert-images.js
+后来习惯了 `async/await` 或者直接用 `fs.readFileSync`（小文件、脚本场景没问题）。
+
+**路径问题**
+
+`./file.json` 的相对路径是相对于**执行命令时的目录**，不是文件所在目录。经常从项目根目录跑脚本但脚本在子目录里，路径对不上。
+
+解决方案：用 `__dirname`（CommonJS）或 `import.meta.url`（ESM）获取当前文件的绝对路径：
+
+```js
+const path = require('path')
+const filePath = path.join(__dirname, '../data/config.json')
 ```
 
-这比写 shell 脚本对前端更友好，JS 语法、熟悉的 API。
+---
+
+## 现在常用的那些东西
+
+用下来，真正高频的就这几个：
+
+| 场景 | 用法 |
+|------|------|
+| 读写文件 | `fs.readFileSync` / `fs.writeFileSync` |
+| 路径拼接 | `path.join(__dirname, '../...')` |
+| 执行命令 | `child_process.execSync('git status')` |
+| 环境变量 | `process.env.NODE_ENV` |
+| 项目根目录 | `process.cwd()` |
+
+这几个基本够覆盖日常脚本需求了。真要写正式的后端服务，再去学 Express 或 Fastify。
 
 ---
 
-## 在这个项目里的实际体现
+## 我的感受
 
-这个博客用了 Next.js 静态导出（`output: 'export'`），构建时 Node.js 做了这些：
+Node.js 对前端来说最大的价值不是「可以写后端了」，而是**工具链打通了**。
 
-1. 读取 `content/posts/*.mdx` — `fs.readdir` + `fs.readFile`
-2. 解析 Markdown frontmatter — `gray-matter` 库（Node.js 进程跑）
-3. 编译 MDX 为 React 组件 — `@next/mdx`（Node.js 进程）
-4. 生成静态 HTML — Next.js 调用 React 的服务端渲染，在 Node.js 里跑
-5. 输出 `out/` 目录 — 最终上传到 GitHub Pages 的静态文件
+你能看懂 `vite.config.ts` 里那些操作，能自己写构建脚本，能在没有后端的情况下自己 mock 数据——这些能力让你在团队里更独立，排查问题也更有底气。
 
-整个构建流程就是一个 Node.js 程序在跑。你运行 `npm run build`，实际上是执行 `next build`，也就是 `node_modules/.bin/next build`，一个 Node.js 脚本。
-
----
-
-## npm 和 package.json
-
-写 Node.js 项目离不开 npm（Node Package Manager）。
-
-```json
-{
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
-  },
-  "dependencies": {
-    "next": "^15.0.0",
-    "react": "^19.0.0"
-  }
-}
-```
-
-- `dependencies` — 运行时需要的包（打包进去）
-- `devDependencies` — 开发时用的工具（不打包，比如 TypeScript、ESLint）
-- `scripts` — 快捷命令，`npm run dev` 就是执行 `next dev`
-
----
-
-## 一个常见误区
-
-Node.js ≠ 后端必须项。很多前端工程只用 Node.js 做：
-
-- 本地开发工具（dev server、hot reload）
-- 构建打包（生成最终静态文件）
-- 脚本自动化（批量重命名、数据处理）
-
-不用写任何「后端接口」，这些场景照样用得很多。
-
----
-
-## 小结
-
-| 场景 | Node.js 的作用 |
-|------|----------------|
-| `npm install / run` | npm 跑在 Node.js 上 |
-| 本地开发服务器 | Node.js 进程监听文件 |
-| 构建打包 | Vite/Webpack/Next 都是 Node.js |
-| SSR / 静态生成 | Next.js 在 Node.js 里跑 React |
-| 脚本工具 | 批量处理、自动化任务 |
-
-不是说前端必须精通 Node.js，但理解「我在 `npm run dev` 时到底发生了什么」，会让你排查问题、配置工具顺手很多。
+不用专门学，跟着项目需求遇到了就查，用几次就熟了。
