@@ -50,7 +50,7 @@ MDX 文件通常分两部分：
 title: "文章标题"
 description: "副标题"
 date: "2026-03-11"
-tags: ["标签1", "标签2"]
+tags: ["标签 1", "标签 2"]
 ---
 
 正文内容从这里开始……
@@ -122,7 +122,7 @@ const sum = (a, b) => a + b
 ### 表格
 
 ```md
-| 列1 | 列2 | 列3 |
+| 列 1 | 列 2 | 列 3 |
 |-----|-----|-----|
 | A   | B   | C   |
 | D   | E   | F   |
@@ -169,28 +169,84 @@ const { data, content } = matter(file)
 />
 ```
 
-`components` 参数可以替换任意 HTML 元素的默认渲染方式。比如把所有 `<pre>` 换成自定义的带样式的版本，或者把 `<a>` 换成带 `target="_blank"` 的版本。
+`components` 参数有两种用途：**覆盖 HTML 元素**的默认渲染（比如给 `<pre>` 加样式），或者**注入自定义组件**（比如交互图表）。
 
 ---
 
-## MDX 里嵌入组件
+## 在文章里使用自定义组件
 
-如果要在文章里插入交互组件，只需要在文件顶部 import，然后像写 JSX 一样用：
+以这个博客的事件循环文章嵌入动画图解为例，完整流程三步：
 
-```mdx
-import Demo from '@/components/Demo'
-import Callout from '@/components/Callout'
+**第一步：写组件**
 
-## 演示
+```tsx
+// components/Blog/EventLoopDiagram.tsx
+'use client'  // 有交互/动画必须加，服务端组件不能用 useState/framer-motion
 
-<Demo />
+import { motion } from 'framer-motion'
+import { useState } from 'react'
 
-<Callout type="tip">
-  这是一个提示框组件，可以传 type 控制样式
-</Callout>
+export default function EventLoopDiagram() {
+  const [step, setStep] = useState(0)
+  return (
+    <div className="rounded-xl border ...">
+      {/* 三栏 + 控制按钮 */}
+    </div>
+  )
+}
 ```
 
-组件和普通 Markdown 内容可以混写，不需要特别分隔。
+**第二步：在 page.tsx 的 components 里注册**
+
+`next-mdx-remote` 的 SSR 模式下，MDX 文件里不能直接写 `import`，组件必须从外部注入：
+
+```tsx
+// app/blog/[slug]/page.tsx
+import EventLoopDiagram from '@/components/Blog/EventLoopDiagram'
+
+<MDXRemote
+  source={content}
+  components={{
+    pre: ...,           // 覆盖 HTML 元素
+    EventLoopDiagram,   // 注入自定义组件（key 就是 MDX 里的标签名）
+  }}
+/>
+```
+
+注册一次，所有文章都能用，不需要每篇单独配置。
+
+**第三步：在 MDX 里直接写标签**
+
+```mdx
+## 调度示意图
+
+<EventLoopDiagram />
+
+上面这个图可以点击"下一步"逐帧查看执行顺序。
+```
+
+组件名大小写敏感，和注册时的 key 一致。支持传 props：
+
+```mdx
+<Callout type="warning">
+  注意这里的边界情况
+</Callout>
+
+<CodeSandbox title="在线运行" lang="js">
+  const x = 1 + 1
+</CodeSandbox>
+```
+
+---
+
+## 两种 components 用法对比
+
+| 用法 | 示例 | 场景 |
+|------|------|------|
+| 覆盖 HTML 元素 | `pre`、`a`、`h2`、`img` | 统一改变某类元素的样式，如代码块、链接加图标 |
+| 注入自定义组件 | `EventLoopDiagram`、`Callout` | 文章里需要交互动画、图表、自定义 UI 块 |
+
+两种方式写在同一个 `components` 对象里，没有冲突。
 
 ---
 
