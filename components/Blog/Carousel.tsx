@@ -24,6 +24,13 @@ export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
   useEffect(() => {
     const saved = sessionStorage.getItem('blog-tab')
     if (saved) setActive(saved)
+
+    const savedY = sessionStorage.getItem('homepage-scroll')
+    if (savedY) {
+      sessionStorage.removeItem('homepage-scroll')
+      const y = parseInt(savedY)
+      requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)))
+    }
   }, [])
 
   const handleTabChange = (label: string) => {
@@ -97,6 +104,7 @@ export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
               {/* Card */}
               <MotionLink
                 href={`/blog/${post.slug}/`}
+                onClick={() => sessionStorage.setItem('homepage-scroll', String(window.scrollY))}
                 className="relative rounded-[14px] p-6 group transition-all block h-full"
                 style={{ background: 'rgba(7, 7, 24, 0.95)', backdropFilter: 'blur(12px)' }}
               >

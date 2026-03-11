@@ -92,7 +92,7 @@ export default function EventLoopDiagram() {
       </div>
 
       {/* 三栏 + 箭头 */}
-      <div className="relative grid grid-cols-3 gap-3 mb-1">
+      <div className="relative grid grid-cols-1 sm:grid-cols-3 gap-3 mb-1">
         <Panel label="调用栈" sublabel="Call Stack" active={active === 'stack'} color="indigo"
           onClick={() => { setStep(0); setRunning(false) }}>
           {STACK_ITEMS.map((item, i) => (
@@ -154,7 +154,7 @@ export default function EventLoopDiagram() {
               animate={{ opacity: 1, scaleX: 1 }}
               exit={{ opacity: 0, scaleX: 0 }}
               style={{ originX: 1 }}
-              className="absolute top-1/2 left-[33.3%] w-[33.3%] -translate-y-1/2 flex items-center justify-center pointer-events-none"
+              className="hidden sm:flex absolute top-1/2 left-[33.3%] w-[33.3%] -translate-y-1/2 items-center justify-center pointer-events-none"
             >
               <div className="w-full h-px bg-gradient-to-l from-cyan-400 to-transparent relative">
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-0.5 w-0 h-0 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent border-r-[6px] border-r-cyan-400" />
@@ -171,7 +171,7 @@ export default function EventLoopDiagram() {
               animate={{ opacity: 1, scaleX: 1 }}
               exit={{ opacity: 0, scaleX: 0 }}
               style={{ originX: 1 }}
-              className="absolute top-1/2 right-0 w-[66.6%] -translate-y-1/2 flex items-center justify-center pointer-events-none"
+              className="hidden sm:flex absolute top-1/2 right-0 w-[66.6%] -translate-y-1/2 items-center justify-center pointer-events-none"
             >
               <div className="w-full h-px bg-gradient-to-l from-violet-400 to-transparent relative">
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-0.5 w-0 h-0 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent border-r-[6px] border-r-violet-400" />
