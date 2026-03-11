@@ -104,16 +104,6 @@ export default function EventLoopDiagram() {
             </motion.div>
           ))}
         </Panel>
-        <AnimatePresence>
-          {active === 'micro' && (
-            <div className="flex justify-center pointer-events-none">
-              <div className="flex flex-col items-center">
-                <div className="w-px h-4 bg-linear-to-b from-cyan-400 to-cyan-400/30" />
-                <div className="w-0 h-0 border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-[6px] border-t-cyan-400" />
-              </div>
-            </div>
-          )}
-        </AnimatePresence>
         <Panel label="微任务队列" sublabel="VIP 快取窗口" active={active === 'micro'} color="cyan"
           onClick={() => { setStep(1); setRunning(false) }}>
           {MICRO_ITEMS.map((item, i) => (
@@ -123,16 +113,6 @@ export default function EventLoopDiagram() {
             </motion.div>
           ))}
         </Panel>
-        <AnimatePresence>
-          {active === 'macro' && (
-            <div className="flex justify-center pointer-events-none">
-              <div className="flex flex-col items-center">
-                <div className="w-px h-4 bg-linear-to-b from-violet-400 to-violet-400/30" />
-                <div className="w-0 h-0 border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-[6px] border-t-violet-400" />
-              </div>
-            </div>
-          )}
-        </AnimatePresence>
         <Panel label="宏任务队列" sublabel="普通出餐窗口" active={active === 'macro'} color="violet"
           onClick={() => { setStep(2); setRunning(false) }}>
           {MACRO_ITEMS.map((item, i) => (
@@ -144,8 +124,8 @@ export default function EventLoopDiagram() {
         </Panel>
       </div>
 
-      {/* 桌面端：三列网格 + 水平箭头 */}
-      <div className="hidden sm:grid relative grid-cols-3 gap-3 mb-1">
+      {/* 桌面端：三列网格 */}
+      <div className="hidden sm:grid grid-cols-3 gap-3 mb-1">
         <Panel label="调用栈" sublabel="Call Stack" active={active === 'stack'} color="indigo"
           onClick={() => { setStep(0); setRunning(false) }}>
           {STACK_ITEMS.map((item, i) => (
@@ -198,24 +178,6 @@ export default function EventLoopDiagram() {
             </motion.div>
           ))}
         </Panel>
-
-        {/* 箭头：微任务 → 调用栈 */}
-        {active === 'micro' && (
-          <div className="absolute top-1/2 left-[33.3%] w-[33.3%] -translate-y-1/2 flex items-center justify-center pointer-events-none">
-            <div className="w-full h-px bg-linear-to-l from-cyan-400 to-transparent relative">
-              <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-0.5 w-0 h-0 border-t-4 border-t-transparent border-b-4 border-b-transparent border-r-[6px] border-r-cyan-400" />
-            </div>
-          </div>
-        )}
-
-        {/* 箭头：宏任务 → 调用栈 */}
-        {active === 'macro' && (
-          <div className="absolute top-1/2 right-0 w-[66.6%] -translate-y-1/2 flex items-center justify-center pointer-events-none">
-            <div className="w-full h-px bg-linear-to-l from-violet-400 to-transparent relative">
-              <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-0.5 w-0 h-0 border-t-4 border-t-transparent border-b-4 border-b-transparent border-r-[6px] border-r-violet-400" />
-            </div>
-          </div>
-        )}
       </div>
 
 
