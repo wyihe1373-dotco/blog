@@ -9,7 +9,7 @@ const MotionLink = motion(Link)
 const CATEGORIES = [
   { label: '全部', tags: [] },
   { label: 'JS 基础', tags: ['JavaScript', 'ES6', '基础', '数组', '工具库'] },
-  { label: '学习笔记', tags: ['React', 'Vue3', 'Vue2', 'Next.js', '学习笔记', 'Composition API'] },
+  { label: '学习笔记', tags: ['React', 'Vue3', 'Vue2', 'Vue', 'Next.js', '学习笔记', 'Composition API', 'framer-motion'] },
   { label: '组件封装', tags: ['组件封装', '全局调用', '设计思路'] },
   { label: '工程化', tags: ['工程化', 'TypeScript', 'Vite', 'Monorepo', 'AI', '代码生成', 'CI/CD'] },
   { label: '业务实践', tags: ['前端工程', '性能优化', '安全', '微信支付', 'H5', 'Canvas'] },
@@ -31,10 +31,12 @@ export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
     sessionStorage.setItem('blog-tab', label)
   }
 
-  // 每篇文章分配到第一个匹配的分类，避免在多个 tab 重复出现
+  // 用第一个 tag 决定分类，确保每篇文章只出现在一个 tab
   const assignCategory = (post: PostMeta): string => {
+    const firstTag = post.tags[0]
+    if (!firstTag) return ''
     for (const cat of CATEGORIES.slice(1)) {
-      if (cat.tags.some(t => post.tags.includes(t))) return cat.label
+      if (cat.tags.includes(firstTag)) return cat.label
     }
     return ''
   }
