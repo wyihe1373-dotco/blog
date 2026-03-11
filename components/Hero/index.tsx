@@ -4,15 +4,16 @@ import dynamic from 'next/dynamic'
 import Typewriter from './Typewriter'
 
 const Particles = dynamic(() => import('@/components/Particles'), { ssr: false })
+const Globe = dynamic(() => import('./Globe'), { ssr: false })
 
 export default function Hero() {
   return (
-    <section className="relative h-75 sm:h-screen flex items-center justify-center overflow-hidden hero-bg">
+    <section className="relative min-h-130 sm:h-screen flex items-center justify-center overflow-hidden hero-bg">
       {/* Aurora blobs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-[200px] h-[200px] md:w-[500px] md:h-[500px] bg-primary/20 rounded-full blur-[80px] md:blur-[120px] animate-pulse" />
-        <div className="absolute top-1/3 right-1/4 w-[160px] h-[160px] md:w-[400px] md:h-[400px] bg-accent/15 rounded-full blur-[60px] md:blur-[100px] animate-pulse" style={{ animationDelay: '1.5s', animationDuration: '4s' }} />
-        <div className="absolute bottom-1/3 left-1/3 w-[140px] h-[140px] md:w-[350px] md:h-[350px] bg-purple-500/10 rounded-full blur-[50px] md:blur-[90px] animate-pulse" style={{ animationDelay: '3s', animationDuration: '5s' }} />
+        <div className="absolute top-1/4 left-1/4 w-50 h-50 md:w-125 md:h-125 bg-primary/20 rounded-full blur-[80px] md:blur-[120px] animate-pulse" />
+        <div className="absolute top-1/3 right-1/4 w-40 h-40 md:w-100 md:h-100 bg-accent/15 rounded-full blur-[60px] md:blur-[100px] animate-pulse" style={{ animationDelay: '1.5s', animationDuration: '4s' }} />
+        <div className="absolute bottom-1/3 left-1/3 w-35 h-35 md:w-87.5 md:h-87.5 bg-purple-500/10 rounded-full blur-[50px] md:blur-[90px] animate-pulse" style={{ animationDelay: '3s', animationDuration: '5s' }} />
       </div>
 
       {/* Particles */}
@@ -30,54 +31,62 @@ export default function Hero() {
       />
 
       {/* Gradient overlay */}
-{/* Gradient overlay */}
-<div className="absolute inset-0 bg-linear-to-b from-transparent via-transparent to-[#050510] pointer-events-none" />
-      <div className="relative z-10 text-center px-6">
-        <motion.p
-          className="shimmer-text font-mono text-sm tracking-widest mb-4"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-        >
-          Hi, 我是
-        </motion.p>
+      <div className="absolute inset-0 bg-linear-to-b from-transparent via-transparent to-background pointer-events-none" />
 
-        <motion.h1
-          className="text-4xl md:text-7xl font-bold text-white mb-4 flex justify-center gap-[0.05em]"
-          initial="hidden"
-          animate="visible"
-          variants={{
-            visible: { transition: { staggerChildren: 0.08, delayChildren: 0.4 } },
-            hidden: {},
-          }}
-        >
-          {'王一贺'.split('').map((char, i) => (
-            <motion.span
-              key={i}
-              variants={{
-                hidden: { opacity: 0, y: 40, rotateX: -90 },
-                visible: { opacity: 1, y: 0, rotateX: 0 },
-              }}
-              transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-              style={{ display: 'inline-block', transformOrigin: 'bottom center' }}
-            >
-              {char}
-            </motion.span>
-          ))}
-        </motion.h1>
+      {/* Two-column layout */}
+      <div className="relative z-10 w-full max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center gap-2 sm:gap-0 py-10 sm:py-0">
 
-        <motion.div
-          className="text-xl md:text-2xl text-slate-300 mb-8 h-8"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-        >
-          <Typewriter />
-        </motion.div>
+        {/* Text — bottom on mobile, left on desktop */}
+        <div className="order-2 sm:order-1 flex-1 text-center sm:text-left">
+          <motion.p
+            className="shimmer-text font-mono text-sm tracking-widest mb-4"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+          >
+            Hi, 我是
+          </motion.p>
 
-       
+          <motion.h1
+            className="text-4xl md:text-7xl font-bold text-white mb-4 flex justify-center sm:justify-start gap-[0.05em]"
+            initial="hidden"
+            animate="visible"
+            variants={{
+              visible: { transition: { staggerChildren: 0.08, delayChildren: 0.4 } },
+              hidden: {},
+            }}
+          >
+            {'王一贺'.split('').map((char, i) => (
+              <motion.span
+                key={i}
+                variants={{
+                  hidden: { opacity: 0, y: 40, rotateX: -90 },
+                  visible: { opacity: 1, y: 0, rotateX: 0 },
+                }}
+                transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+                style={{ display: 'inline-block', transformOrigin: 'bottom center' }}
+              >
+                {char}
+              </motion.span>
+            ))}
+          </motion.h1>
+
+          <motion.div
+            className="text-xl md:text-2xl text-slate-300 mb-8 h-8"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.6 }}
+          >
+            <Typewriter />
+          </motion.div>
+        </div>
+
+        {/* Globe — top on mobile, right on desktop */}
+        <div className="order-1 sm:order-2 w-55 h-55 sm:w-95 sm:h-95 md:w-115 md:h-115 shrink-0 pointer-events-none">
+          <Globe />
+        </div>
+
       </div>
-
     </section>
   )
 }

@@ -177,6 +177,16 @@ export default function Particles({
     let rafId: number
     let lastTime = performance.now()
     let elapsed = 0
+    let inViewport = true
+    let tabVisible = true
+
+    const shouldRender = () => inViewport && tabVisible
+
+    const startLoop = () => {
+      lastTime = performance.now() // 重置，避免恢复时出现大帧差
+      rafId = requestAnimationFrame(update)
+    }
+    const stopLoop = () => cancelAnimationFrame(rafId)
 
     const update = (t: number) => {
       rafId = requestAnimationFrame(update)
@@ -198,11 +208,31 @@ export default function Particles({
       renderer.render({ scene: mesh, camera })
     }
 
+    // 离屏暂停
+    const observer = new IntersectionObserver(([entry]) => {
+      const was = shouldRender()
+      inViewport = entry.isIntersecting
+      if (!was && shouldRender()) startLoop()
+      if (was && !shouldRender()) stopLoop()
+    }, { threshold: 0 })
+    observer.observe(container)
+
+    // Tab 隐藏暂停
+    const onVisibility = () => {
+      const was = shouldRender()
+      tabVisible = !document.hidden
+      if (!was && shouldRender()) startLoop()
+      if (was && !shouldRender()) stopLoop()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
     rafId = requestAnimationFrame(update)
 
     return () => {
       window.removeEventListener('resize', resize)
       if (moveParticlesOnHover) container.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('visibilitychange', onVisibility)
+      observer.disconnect()
       cancelAnimationFrame(rafId)
       if (container.contains(gl.canvas)) container.removeChild(gl.canvas)
     }
