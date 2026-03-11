@@ -13,10 +13,7 @@ function Scene({ isMobile }: { isMobile: boolean }) {
   const tabVisible = useRef(true)
   const { gl } = useThree()
 
-  const colorMap = useLoader(
-    TextureLoader,
-    isMobile ? `${BASE}/earth-map-mobile.jpg` : `${BASE}/earth-map.jpg`
-  )
+  const colorMap = useLoader(TextureLoader, `${BASE}/earth-map.jpg`)
   const cloudsMap = useLoader(TextureLoader, `${BASE}/earth-clouds.png`)
 
   // 离屏暂停
@@ -42,7 +39,7 @@ function Scene({ isMobile }: { isMobile: boolean }) {
     if (cloudsRef.current) cloudsRef.current.rotation.y += delta * 0.08
   })
 
-  const seg = isMobile ? 12 : 32
+  const seg = isMobile ? 24 : 32
 
   return (
     <>
@@ -95,7 +92,7 @@ export default function Globe() {
     <Canvas
       camera={{ position: [0, 0, 5], fov: 50 }}
       performance={{ min: 0.5 }}
-      dpr={[1, isMobile ? 1 : 1.5]}
+      dpr={[1, 2]}
       gl={{ antialias: !isMobile, alpha: true, powerPreference: 'low-power' }}
       style={{ background: 'transparent' }}
     >
