@@ -39,26 +39,42 @@ function LocationMarker({
   active: boolean
   onActivate: () => void
 }) {
+  const groupRef = useRef<THREE.Group>(null)
   const pulseRef = useRef<THREE.Mesh>(null)
   const pulseProgress = useRef(Math.random())
+  const lastFacing = useRef(true)
+  const [facingCamera, setFacingCamera] = useState(true)
 
   // 当前城市（current: true）始终高亮 + 信息卡常驻，不受点击影响
   const isCurrent = !!location.current
   const isActive = isCurrent || active
 
-  useFrame((_, delta) => {
-    if (!pulseRef.current) return
-    pulseProgress.current = (pulseProgress.current + delta * 0.33) % 1
-    const t = pulseProgress.current
-    pulseRef.current.scale.setScalar(1 + t * 1.5)
-    const mat = pulseRef.current.material as THREE.MeshBasicMaterial
-    mat.opacity = (1 - t) * 0.6
+  useFrame(({ camera }, delta) => {
+    // 脉冲动画
+    if (pulseRef.current) {
+      pulseProgress.current = (pulseProgress.current + delta * 0.33) % 1
+      const t = pulseProgress.current
+      pulseRef.current.scale.setScalar(1 + t * 1.5)
+      ;(pulseRef.current.material as THREE.MeshBasicMaterial).opacity = (1 - t) * 0.6
+    }
+    // 用点积判断标记是否朝向相机，背面时隐藏信息卡
+    if (groupRef.current) {
+      const worldPos = new THREE.Vector3()
+      groupRef.current.getWorldPosition(worldPos)
+      const normal = worldPos.clone().normalize()
+      const toCam = new THREE.Vector3().subVectors(camera.position, worldPos).normalize()
+      const facing = normal.dot(toCam) > 0.05
+      if (facing !== lastFacing.current) {
+        lastFacing.current = facing
+        setFacingCamera(facing)
+      }
+    }
   })
 
   const pos = latLonToVec3(location.lat, location.lon, 1.53)
 
   return (
-    <group position={pos}>
+    <group ref={groupRef} position={pos}>
       {/* 发光点 */}
       <mesh
         onPointerDown={(e) => {
@@ -87,8 +103,8 @@ function LocationMarker({
         />
       </mesh>
 
-      {/* 信息卡 — current 城市常驻，其他城市激活时显示 */}
-      {isActive && (
+      {/* 信息卡 — 朝向相机时显示，背面隐藏 */}
+      {isActive && facingCamera && (
         <Html style={{ pointerEvents: 'none', userSelect: 'none' }}>
           <div style={{
             background: 'rgba(7,7,24,0.88)',
