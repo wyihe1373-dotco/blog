@@ -3,6 +3,29 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { useEffect, useState, useCallback } from 'react'
 
+type LineTag = 'sync' | 'micro' | 'macro' | 'loop' | ''
+
+const CODE_LINES: { text: string; tag: LineTag; isCallback: boolean }[] = [
+  { text: "console.log('1')",               tag: 'sync',  isCallback: false },
+  { text: "setTimeout(() => {",             tag: '',      isCallback: false },
+  { text: "  console.log('4')",             tag: 'macro', isCallback: true  },
+  { text: "}, 0)",                          tag: '',      isCallback: false },
+  { text: "Promise.resolve().then(() => {", tag: '',      isCallback: false },
+  { text: "  console.log('3')",             tag: 'micro', isCallback: true  },
+  { text: "})",                             tag: '',      isCallback: false },
+  { text: "console.log('2')",               tag: 'sync',  isCallback: false },
+]
+
+const ALL_OUTPUTS: { value: string; method: string; stepIdx: number }[] = [
+  { value: '1', method: "console.log('1')", stepIdx: 0 },
+  { value: '2', method: "console.log('2')", stepIdx: 0 },
+  { value: '3', method: "console.log('3')", stepIdx: 1 },
+  { value: '4', method: "console.log('4')", stepIdx: 2 },
+]
+
+// 每步骤累计显示的输出条数
+const OUTPUT_COUNT_BY_STEP = [2, 3, 4, 4]
+
 const STEPS = [
   {
     id: 'sync',
@@ -10,6 +33,7 @@ const STEPS = [
     target: 'stack' as const,
     desc: '主线程逐行执行，函数调用依次入栈、出栈。调用栈清空前，任何队列里的任务都不会执行。',
     arrow: null,
+    activeTag: 'sync' as LineTag,
   },
   {
     id: 'micro',
@@ -17,6 +41,7 @@ const STEPS = [
     target: 'micro' as const,
     desc: '调用栈空了，大堂经理优先处理 VIP 窗口——把所有微任务全部跑完，一个不剩，才进行下一步。',
     arrow: 'micro→stack' as const,
+    activeTag: 'micro' as LineTag,
   },
   {
     id: 'macro',
@@ -24,6 +49,7 @@ const STEPS = [
     target: 'macro' as const,
     desc: '微任务清空后，从普通出餐口取出一个宏任务交给主线程执行。注意：每次只取一个，执行完再回到 ②。',
     arrow: 'macro→stack' as const,
+    activeTag: 'macro' as LineTag,
   },
   {
     id: 'repeat',
@@ -31,6 +57,7 @@ const STEPS = [
     target: 'loop' as const,
     desc: '宏任务执行完毕后，再次检查微任务队列……如此往复，永不停止。这就是"事件循环"名字的由来。',
     arrow: null,
+    activeTag: 'loop' as LineTag,
   },
 ]
 
@@ -68,8 +95,36 @@ export default function EventLoopDiagram() {
     return () => clearInterval(timer)
   }, [running, next])
 
+  const [subLine, setSubLine] = useState(0)
+
+  // 步骤①内逐行动画：先高亮 log('1')，1s 后移到 log('2')
+  // 步骤切走时清理 timer，重置 subLine
+  useEffect(() => {
+    if (step !== 0) {
+      setSubLine(0)
+      return
+    }
+    const timer = setTimeout(() => setSubLine(1), 1000)
+    return () => clearTimeout(timer)
+  }, [step])
+
   const active = STEPS[step].target
   const currentStep = STEPS[step]
+
+  function getLineState(line: typeof CODE_LINES[number]): 'active' | 'reg' | 'off' {
+    const activeTag = STEPS[step].activeTag
+    if (activeTag === 'loop') return 'off'
+    if (line.tag === activeTag) {
+      if (activeTag === 'sync') {
+        if (line.text === "console.log('1')" && subLine === 0) return 'active'
+        if (line.text === "console.log('2')" && subLine === 1) return 'active'
+        return 'off'
+      }
+      return 'active'
+    }
+    if (line.isCallback) return 'off'
+    return 'reg'
+  }
 
   return (
     <div className="my-6 rounded-xl border border-white/10 bg-[rgba(10,10,25,0.95)] p-5 select-none">
