@@ -37,6 +37,11 @@ console.log('2')
 
 其余布局（面板、描述卡片、控制栏）不变。
 
+**移动端处理（CRITICAL）**：现有组件对三个面板有移动端（`sm:hidden`）和桌面端（`hidden sm:grid`）两份 JSX。新增的代码/console 区域**不做重复**，统一使用响应式 grid：
+- 桌面（`sm:` 及以上）：两列并排（`grid-cols-2`）
+- 移动：单列堆叠（代码块在上，console 在下）
+- 通过 `grid-cols-1 sm:grid-cols-2` 实现，一份 JSX 覆盖两端。
+
 ---
 
 ## 各步骤行为
@@ -48,6 +53,9 @@ console.log('2')
 - 进入步骤时，先高亮 `console.log('1')`，console 显示 `1`
 - 约 1s 后，高亮移到 `console.log('2')`，console 累加 `2`
 - 用组件内 `subLine` state（`0` | `1`）控制，`useEffect` 在步骤激活时延迟切换
+- **timer 清理（CRITICAL）**：`useEffect` 依赖 `[step]`，仅当 `step === 0` 时才启动 1s timer；cleanup 函数必须调用 `clearTimeout` 取消待执行的 timer。当 `step !== 0` 时，同一个 effect 负责将 `subLine` 重置为 `0`，防止用户跳步时残留高亮状态。参考现有 auto-play 的 `clearInterval` 模式。
+
+**1s 延迟需小于 auto-play 间隔（3000ms）**，确保自动播放时 subLine 动画能在步骤切换前完成。
 
 `setTimeout` 和 `Promise.resolve().then` 的外层行（注册行）显示为暗灰色（`reg`），回调体行（`console.log('3')` / `console.log('4')`）完全暗掉（`off`），以区分「已注册但未执行」。
 
@@ -61,7 +69,7 @@ console.log('2')
 
 ### ④ 重复循环（target: loop）
 
-不高亮代码行。替换代码块和 console 块为一个完整汇总面板：
+不高亮代码行。代码/console 两列区域被一个全宽汇总面板**替换**（`col-span-2`），使用 `AnimatePresence` + `motion.div`（`key={step}`）实现淡入淡出，与现有描述卡片的动画方式一致。汇总面板格式：
 
 ```
 1  执行了 console.log('1')   [① 同步]
@@ -123,8 +131,47 @@ const ALL_OUTPUTS = [
   { value: '3', method: "log('3')", stepIdx: 1 },
   { value: '4', method: "log('4')", stepIdx: 2 },
 ]
-// 当前步骤显示 ALL_OUTPUTS.slice(0, outputCountByStep[step])
+
+// 每步累计显示的输出数量：[step0=2, step1=3, step2=4, step3=4]
+const OUTPUT_COUNT_BY_STEP = [2, 3, 4, 4]
+
+// 渲染时：ALL_OUTPUTS.slice(0, OUTPUT_COUNT_BY_STEP[step])
+// isNew 判断：index >= OUTPUT_COUNT_BY_STEP[step - 1] ?? 0
 ```
+
+### 代码行显示状态算法
+
+每行有 `tag`（属于哪个步骤）和 `isCallback`（是否为回调体内的行）。根据当前 `step` 和 `subLine` 计算显示状态：
+
+```
+function getLineState(line, step, subLine):
+  activeTag = STEPS[step].activeTag   // 'sync'|'micro'|'macro'|'loop'
+
+  if activeTag === 'loop':
+    return 'off'   // 步骤④不高亮任何行
+
+  if line.tag === activeTag:
+    if activeTag === 'sync':
+      // sync 步骤有两条活跃行，用 subLine 区分
+      if line.text === "console.log('1')" and subLine === 0: return 'active'
+      if line.text === "console.log('2')" and subLine === 1: return 'active'
+      return 'off'
+    else:
+      // micro/macro 步骤只有一条活跃行（回调体内的 log）
+      return 'active'
+
+  if line.isCallback:
+    return 'off'   // 非当前步骤的回调体，完全隐去
+
+  return 'reg'     // 注册行或已执行的外层代码，暗灰色
+```
+
+### `LineTag` 类型说明
+
+`type LineTag = 'sync' | 'micro' | 'macro' | 'loop' | ''`
+
+- `''`：仅用于 `CODE_LINES` 中没有对应步骤的行（如 `}, 0)` 闭合行）
+- `'loop'`：步骤④专用，`activeTag` 为 `'loop'` 时不高亮任何代码行
 
 ---
 
