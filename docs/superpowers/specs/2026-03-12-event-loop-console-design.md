@@ -110,7 +110,7 @@ console.log('2')
 
 ```ts
 // 每行代码的标注
-type LineTag = 'sync' | 'micro' | 'macro' | ''
+type LineTag = 'sync' | 'micro' | 'macro' | 'loop' | ''
 
 const CODE_LINES: { text: string; tag: LineTag; isCallback: boolean }[]
 
