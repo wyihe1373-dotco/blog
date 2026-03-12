@@ -179,6 +179,116 @@ export default function EventLoopDiagram() {
         </Panel>
       </div>
 
+      {/* 代码示例 + Console 输出（响应式，不重复） */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+        <AnimatePresence mode="wait">
+          {active === 'loop' ? (
+            /* 步骤④：全宽汇总面板 */
+            <motion.div
+              key="summary"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.25 }}
+              className="sm:col-span-2 rounded-lg border border-white/5 bg-black/30 p-3"
+            >
+              <div className="text-[10px] text-slate-600 font-mono mb-3">// 完整执行顺序</div>
+              <div className="space-y-1">
+                {ALL_OUTPUTS.map((out, i) => {
+                  const colors = ['text-indigo-400', 'text-indigo-400', 'text-cyan-400', 'text-violet-400']
+                  const bgs    = ['bg-indigo-500/10', 'bg-indigo-500/10', 'bg-cyan-500/10', 'bg-violet-500/10']
+                  const tags   = ['① 同步', '① 同步', '② 微任务', '③ 宏任务']
+                  const tagColors = ['text-indigo-500', 'text-indigo-500', 'text-cyan-600', 'text-violet-600']
+                  return (
+                    <div key={i}>
+                      <motion.div
+                        initial={{ opacity: 0, x: -6 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.2, delay: i * 0.06 }}
+                        className={`flex items-center gap-2 px-2 py-1.5 rounded ${bgs[i]}`}
+                      >
+                        <span className={`text-sm font-bold font-mono ${colors[i]}`}>{out.value}</span>
+                        <span className="text-[10px] text-slate-600 font-mono flex-1">执行了 {out.method}</span>
+                        <span className={`text-[9px] font-mono ${tagColors[i]}`}>{tags[i]}</span>
+                      </motion.div>
+                      {i < ALL_OUTPUTS.length - 1 && (
+                        <div className="text-[10px] text-slate-800 font-mono ml-3">↓</div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </motion.div>
+          ) : (
+            /* 步骤①②③：代码块 + console 输出（用真实 DOM 节点包裹，framer-motion 需要可见盒子） */
+            <motion.div
+              key="code-console"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.25 }}
+              className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3"
+            >
+              {/* 代码块 */}
+              <div className="rounded-lg border border-white/5 bg-black/30 p-3">
+                <div className="text-[10px] text-slate-600 font-mono mb-2">// 示例代码</div>
+                <div className="space-y-0">
+                  {CODE_LINES.map((line, i) => {
+                    const state = getLineState(line)
+                    const activeColors: Record<string, string> = {
+                      sync:  'text-indigo-300 bg-indigo-500/12 font-semibold',
+                      micro: 'text-cyan-300 bg-cyan-500/10 font-semibold',
+                      macro: 'text-violet-300 bg-violet-500/10 font-semibold',
+                    }
+                    const currentTag = STEPS[step].activeTag as string
+                    const activeColor = activeColors[currentTag] ?? ''
+                    return (
+                      <div
+                        key={i}
+                        className={`text-[10px] font-mono leading-6 px-1 rounded whitespace-pre transition-colors duration-200 ${
+                          state === 'active' ? activeColor
+                          : state === 'reg'  ? 'text-slate-700'
+                          : 'text-slate-800'
+                        }`}
+                      >
+                        {state === 'active' ? `▶ ${line.text}` : `  ${line.text}`}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Console 输出块 */}
+              <div className="rounded-lg border border-white/5 bg-black/30 p-3">
+                <div className="text-[10px] text-slate-600 font-mono mb-2">// console 输出</div>
+                <div className="space-y-1">
+                  {ALL_OUTPUTS.slice(0, OUTPUT_COUNT_BY_STEP[step]).map((out, i) => {
+                    const prevCount = step > 0 ? OUTPUT_COUNT_BY_STEP[step - 1] : 0
+                    const isNew = i >= prevCount
+                    const newColors = ['text-indigo-400', 'text-indigo-400', 'text-cyan-400', 'text-violet-400']
+                    return (
+                      <motion.div
+                        key={`${step}-${i}`}
+                        initial={isNew ? { opacity: 0, x: -6 } : false}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.25, delay: isNew ? 0.05 : 0 }}
+                        className={`text-[10px] font-mono flex items-baseline gap-1.5 ${
+                          isNew ? newColors[i] : 'text-slate-700'
+                        }`}
+                      >
+                        <span className="text-slate-800">{'>'}</span>
+                        <span className={`text-xs font-bold ${isNew ? newColors[i] : 'text-slate-800'}`}>{out.value}</span>
+                        <span className={isNew ? 'text-slate-500' : 'text-slate-800'}>执行了 {out.method}</span>
+                      </motion.div>
+                    )
+                  })}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
       {/* 桌面端：三列网格 */}
       <div className="hidden sm:grid grid-cols-3 gap-3 mb-1">
         <Panel label="调用栈" sublabel="Call Stack" active={active === 'stack'} color="indigo"
