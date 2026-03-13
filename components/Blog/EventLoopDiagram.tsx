@@ -3,29 +3,6 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { useEffect, useState, useCallback } from 'react'
 
-type LineTag = 'sync' | 'micro' | 'macro' | 'loop' | ''
-
-const CODE_LINES: { text: string; tag: LineTag; isCallback: boolean }[] = [
-  { text: "console.log('1')",               tag: 'sync',  isCallback: false },
-  { text: "setTimeout(() => {",             tag: '',      isCallback: false },
-  { text: "  console.log('4')",             tag: 'macro', isCallback: true  },
-  { text: "}, 0)",                          tag: '',      isCallback: false },
-  { text: "Promise.resolve().then(() => {", tag: '',      isCallback: false },
-  { text: "  console.log('3')",             tag: 'micro', isCallback: true  },
-  { text: "})",                             tag: '',      isCallback: false },
-  { text: "console.log('2')",               tag: 'sync',  isCallback: false },
-]
-
-const ALL_OUTPUTS: { value: string; method: string; stepIdx: number }[] = [
-  { value: '1', method: "console.log('1')", stepIdx: 0 },
-  { value: '2', method: "console.log('2')", stepIdx: 0 },
-  { value: '3', method: "console.log('3')", stepIdx: 1 },
-  { value: '4', method: "console.log('4')", stepIdx: 2 },
-]
-
-// 每步骤累计显示的输出条数
-const OUTPUT_COUNT_BY_STEP = [2, 3, 4, 4]
-
 const STEPS = [
   {
     id: 'sync',
@@ -33,7 +10,6 @@ const STEPS = [
     target: 'stack' as const,
     desc: '主线程逐行执行，函数调用依次入栈、出栈。调用栈清空前，任何队列里的任务都不会执行。',
     arrow: null,
-    activeTag: 'sync' as LineTag,
   },
   {
     id: 'micro',
@@ -41,7 +17,6 @@ const STEPS = [
     target: 'micro' as const,
     desc: '调用栈空了，大堂经理优先处理 VIP 窗口——把所有微任务全部跑完，一个不剩，才进行下一步。',
     arrow: 'micro→stack' as const,
-    activeTag: 'micro' as LineTag,
   },
   {
     id: 'macro',
@@ -49,7 +24,6 @@ const STEPS = [
     target: 'macro' as const,
     desc: '微任务清空后，从普通出餐口取出一个宏任务交给主线程执行。注意：每次只取一个，执行完再回到 ②。',
     arrow: 'macro→stack' as const,
-    activeTag: 'macro' as LineTag,
   },
   {
     id: 'repeat',
@@ -57,34 +31,33 @@ const STEPS = [
     target: 'loop' as const,
     desc: '宏任务执行完毕后，再次检查微任务队列……如此往复，永不停止。这就是"事件循环"名字的由来。',
     arrow: null,
-    activeTag: 'loop' as LineTag,
   },
 ]
 
 const MICRO_ITEMS = [
-  { label: 'Promise.then', note: '最常见' },
-  { label: 'async/await', note: '语法糖' },
-  { label: 'queueMicrotask', note: '手动入队' },
-  { label: 'MutationObserver', note: 'DOM 变化' },
+  { label: 'Promise.then', note: '最常见', log: 'Promise.then' },
+  { label: 'async/await', note: '语法糖', log: 'async/await' },
+  { label: 'queueMicrotask', note: '手动入队', log: 'queueMicrotask' },
+  { label: 'MutationObserver', note: 'DOM 变化', log: 'MutationObserver' },
 ]
 
 const MACRO_ITEMS = [
-  { label: 'setTimeout', note: '延时执行' },
-  { label: 'setInterval', note: '定时执行' },
-  { label: 'DOM 事件回调', note: '点击/输入' },
-  { label: 'fetch 回调', note: '网络请求' },
+  { label: 'setTimeout', note: '延时执行', log: 'setTimeout' },
+  { label: 'setInterval', note: '定时执行', log: 'setInterval' },
+  { label: 'DOM 事件回调', note: '点击/输入', log: 'onclick' },
+  { label: 'fetch 回调', note: '网络请求', log: 'fetch cb' },
 ]
 
 const STACK_ITEMS = [
-  { label: 'fn3()', note: '栈顶' },
-  { label: 'fn2()', note: '' },
-  { label: 'fn1()', note: '' },
-  { label: '(global)', note: '栈底' },
+  { label: 'fn3()', note: '栈顶', log: 'fn3' },
+  { label: 'fn2()', note: '', log: 'fn2' },
+  { label: 'fn1()', note: '', log: 'fn1' },
+  { label: '(global)', note: '栈底', log: 'global' },
 ]
 
 export default function EventLoopDiagram() {
   const [step, setStep] = useState(0)
-  const [running, setRunning] = useState(false)  // 默认暂停，让用户主动探索
+  const [running, setRunning] = useState(false)
 
   const next = useCallback(() => setStep(s => (s + 1) % STEPS.length), [])
   const prev = useCallback(() => setStep(s => (s - 1 + STEPS.length) % STEPS.length), [])
@@ -95,36 +68,8 @@ export default function EventLoopDiagram() {
     return () => clearInterval(timer)
   }, [running, next])
 
-  const [subLine, setSubLine] = useState(0)
-
-  // 步骤①内逐行动画：先高亮 log('1')，1s 后移到 log('2')
-  // 步骤切走时清理 timer，重置 subLine
-  useEffect(() => {
-    if (step !== 0) {
-      setSubLine(0)
-      return
-    }
-    const timer = setTimeout(() => setSubLine(1), 1000)
-    return () => clearTimeout(timer)
-  }, [step])
-
   const active = STEPS[step].target
   const currentStep = STEPS[step]
-
-  function getLineState(line: typeof CODE_LINES[number]): 'active' | 'reg' | 'off' {
-    const activeTag = STEPS[step].activeTag
-    if (activeTag === 'loop') return 'off'
-    if (line.tag === activeTag) {
-      if (activeTag === 'sync') {
-        if (line.text === "console.log('1')" && subLine === 0) return 'active'
-        if (line.text === "console.log('2')" && subLine === 1) return 'active'
-        return 'off'
-      }
-      return 'active'
-    }
-    if (line.isCallback) return 'off'
-    return 'reg'
-  }
 
   return (
     <div className="my-6 rounded-xl border border-white/10 bg-[rgba(10,10,25,0.95)] p-5 select-none">
@@ -146,147 +91,50 @@ export default function EventLoopDiagram() {
         </div>
       </div>
 
-      {/* 三栏 + 箭头 */}
-
-      {/* 移动端：上下排列 + 向下箭头 */}
+      {/* 移动端：上下排列 */}
       <div className="sm:hidden flex flex-col gap-3 mb-1">
         <Panel label="调用栈" sublabel="Call Stack" active={active === 'stack'} color="indigo"
           onClick={() => { setStep(0); setRunning(false) }}>
           {STACK_ITEMS.map((item, i) => (
-            <motion.div key={item.label} animate={active === 'stack' ? { backgroundColor: ['rgba(99,102,241,0)', 'rgba(99,102,241,0.15)', 'rgba(99,102,241,0)'] } : {}} transition={{ duration: 0.8, delay: i * 0.15, ease: 'easeInOut' }} className="flex items-center justify-between text-xs font-mono text-indigo-300 py-1 px-1.5 rounded">
-              <span>{item.label}</span>
-              {item.note && <span className="text-[10px] text-indigo-600">{item.note}</span>}
+            <motion.div key={item.label} animate={active === 'stack' ? { backgroundColor: ['rgba(99,102,241,0)', 'rgba(99,102,241,0.15)', 'rgba(99,102,241,0)'] } : {}} transition={{ duration: 0.8, delay: i * 0.15, ease: 'easeInOut' }} className="flex items-start justify-between text-xs font-mono text-indigo-300 py-1 px-1.5 rounded">
+              <div className="flex flex-col gap-0.5">
+                <span>{item.label}</span>
+                {active === 'stack' && (
+                  <span className="text-[9px] text-indigo-400/60 font-mono">console.log('{item.log}')</span>
+                )}
+              </div>
+              {item.note && <span className="text-[10px] text-indigo-600 shrink-0">{item.note}</span>}
             </motion.div>
           ))}
         </Panel>
         <Panel label="微任务队列" sublabel="VIP 快取窗口" active={active === 'micro'} color="cyan"
           onClick={() => { setStep(1); setRunning(false) }}>
           {MICRO_ITEMS.map((item, i) => (
-            <motion.div key={item.label} animate={active === 'micro' ? { x: [0, 6, 0], backgroundColor: ['rgba(34,211,238,0)', 'rgba(34,211,238,0.12)', 'rgba(34,211,238,0)'] } : { x: 0 }} transition={{ duration: 0.6, delay: i * 0.12 }} className="flex items-center justify-between text-xs font-mono text-cyan-300 py-1 px-1.5 rounded">
-              <span>{item.label}</span>
-              <span className="text-[10px] text-cyan-700">{item.note}</span>
+            <motion.div key={item.label} animate={active === 'micro' ? { x: [0, 6, 0], backgroundColor: ['rgba(34,211,238,0)', 'rgba(34,211,238,0.12)', 'rgba(34,211,238,0)'] } : { x: 0 }} transition={{ duration: 0.6, delay: i * 0.12 }} className="flex items-start justify-between text-xs font-mono text-cyan-300 py-1 px-1.5 rounded">
+              <div className="flex flex-col gap-0.5">
+                <span>{item.label}</span>
+                {active === 'micro' && (
+                  <span className="text-[9px] text-cyan-400/60 font-mono">console.log('{item.log}')</span>
+                )}
+              </div>
+              <span className="text-[10px] text-cyan-700 shrink-0">{item.note}</span>
             </motion.div>
           ))}
         </Panel>
         <Panel label="宏任务队列" sublabel="普通出餐窗口" active={active === 'macro'} color="violet"
           onClick={() => { setStep(2); setRunning(false) }}>
           {MACRO_ITEMS.map((item, i) => (
-            <motion.div key={item.label} animate={active === 'macro' ? { x: [0, 6, 0], backgroundColor: ['rgba(167,139,250,0)', 'rgba(167,139,250,0.12)', 'rgba(167,139,250,0)'] } : { x: 0 }} transition={{ duration: 0.6, delay: i * 0.12 }} className="flex items-center justify-between text-xs font-mono text-violet-300 py-1 px-1.5 rounded">
-              <span>{item.label}</span>
-              <span className="text-[10px] text-violet-700">{item.note}</span>
+            <motion.div key={item.label} animate={active === 'macro' ? { x: [0, 6, 0], backgroundColor: ['rgba(167,139,250,0)', 'rgba(167,139,250,0.12)', 'rgba(167,139,250,0)'] } : { x: 0 }} transition={{ duration: 0.6, delay: i * 0.12 }} className="flex items-start justify-between text-xs font-mono text-violet-300 py-1 px-1.5 rounded">
+              <div className="flex flex-col gap-0.5">
+                <span>{item.label}</span>
+                {active === 'macro' && (
+                  <span className="text-[9px] text-violet-400/60 font-mono">console.log('{item.log}')</span>
+                )}
+              </div>
+              <span className="text-[10px] text-violet-700 shrink-0">{item.note}</span>
             </motion.div>
           ))}
         </Panel>
-      </div>
-
-      {/* 代码示例 + Console 输出（响应式，不重复） */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-        <AnimatePresence mode="wait">
-          {active === 'loop' ? (
-            /* 步骤④：全宽汇总面板 */
-            <motion.div
-              key="summary"
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.25 }}
-              className="sm:col-span-2 rounded-lg border border-white/5 bg-black/30 p-3"
-            >
-              <div className="text-[10px] text-slate-600 font-mono mb-3">// 完整执行顺序</div>
-              <div className="space-y-1">
-                {ALL_OUTPUTS.map((out, i) => {
-                  const colors = ['text-indigo-400', 'text-indigo-400', 'text-cyan-400', 'text-violet-400']
-                  const bgs    = ['bg-indigo-500/10', 'bg-indigo-500/10', 'bg-cyan-500/10', 'bg-violet-500/10']
-                  const tags   = ['① 同步', '① 同步', '② 微任务', '③ 宏任务']
-                  const tagColors = ['text-indigo-500', 'text-indigo-500', 'text-cyan-600', 'text-violet-600']
-                  return (
-                    <div key={i}>
-                      <motion.div
-                        initial={{ opacity: 0, x: -6 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.2, delay: i * 0.06 }}
-                        className={`flex items-center gap-2 px-2 py-1.5 rounded ${bgs[i]}`}
-                      >
-                        <span className={`text-sm font-bold font-mono ${colors[i]}`}>{out.value}</span>
-                        <span className="text-[10px] text-slate-600 font-mono flex-1">执行了 {out.method}</span>
-                        <span className={`text-[9px] font-mono ${tagColors[i]}`}>{tags[i]}</span>
-                      </motion.div>
-                      {i < ALL_OUTPUTS.length - 1 && (
-                        <div className="text-[10px] text-slate-800 font-mono ml-3">↓</div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </motion.div>
-          ) : (
-            /* 步骤①②③：代码块 + console 输出（用真实 DOM 节点包裹，framer-motion 需要可见盒子） */
-            <motion.div
-              key="code-console"
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.25 }}
-              className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3"
-            >
-              {/* 代码块 */}
-              <div className="rounded-lg border border-white/5 bg-black/30 p-3">
-                <div className="text-[10px] text-slate-600 font-mono mb-2">// 示例代码</div>
-                <div className="space-y-0">
-                  {CODE_LINES.map((line, i) => {
-                    const state = getLineState(line)
-                    const activeColors: Record<string, string> = {
-                      sync:  'text-indigo-300 bg-indigo-500/12 font-semibold',
-                      micro: 'text-cyan-300 bg-cyan-500/10 font-semibold',
-                      macro: 'text-violet-300 bg-violet-500/10 font-semibold',
-                    }
-                    const currentTag = STEPS[step].activeTag as string
-                    const activeColor = activeColors[currentTag] ?? ''
-                    return (
-                      <div
-                        key={i}
-                        className={`text-[10px] font-mono leading-6 px-1 rounded whitespace-pre transition-colors duration-200 ${
-                          state === 'active' ? activeColor
-                          : state === 'reg'  ? 'text-slate-700'
-                          : 'text-slate-800'
-                        }`}
-                      >
-                        {state === 'active' ? `▶ ${line.text}` : `  ${line.text}`}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Console 输出块 */}
-              <div className="rounded-lg border border-white/5 bg-black/30 p-3">
-                <div className="text-[10px] text-slate-600 font-mono mb-2">// console 输出</div>
-                <div className="space-y-1">
-                  {ALL_OUTPUTS.slice(0, OUTPUT_COUNT_BY_STEP[step]).map((out, i) => {
-                    const prevCount = step > 0 ? OUTPUT_COUNT_BY_STEP[step - 1] : 0
-                    const isNew = i >= prevCount
-                    const newColors = ['text-indigo-400', 'text-indigo-400', 'text-cyan-400', 'text-violet-400']
-                    return (
-                      <motion.div
-                        key={`${step}-${i}`}
-                        initial={isNew ? { opacity: 0, x: -6 } : false}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.25, delay: isNew ? 0.05 : 0 }}
-                        className={`text-[10px] font-mono flex items-baseline gap-1.5 ${
-                          isNew ? newColors[i] : 'text-slate-700'
-                        }`}
-                      >
-                        <span className="text-slate-800">{'>'}</span>
-                        <span className={`text-xs font-bold ${isNew ? newColors[i] : 'text-slate-800'}`}>{out.value}</span>
-                        <span className={isNew ? 'text-slate-500' : 'text-slate-800'}>执行了 {out.method}</span>
-                      </motion.div>
-                    )
-                  })}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
       {/* 桌面端：三列网格 */}
@@ -300,10 +148,15 @@ export default function EventLoopDiagram() {
                 backgroundColor: ['rgba(99,102,241,0)', 'rgba(99,102,241,0.15)', 'rgba(99,102,241,0)'],
               } : {}}
               transition={{ duration: 0.8, delay: i * 0.15, ease: 'easeInOut' }}
-              className="flex items-center justify-between text-xs font-mono text-indigo-300 py-1 px-1.5 rounded"
+              className="flex items-start justify-between text-xs font-mono text-indigo-300 py-1 px-1.5 rounded"
             >
-              <span>{item.label}</span>
-              {item.note && <span className="text-[10px] text-indigo-600">{item.note}</span>}
+              <div className="flex flex-col gap-0.5">
+                <span>{item.label}</span>
+                {active === 'stack' && (
+                  <span className="text-[9px] text-indigo-400/60 font-mono">console.log('{item.log}')</span>
+                )}
+              </div>
+              {item.note && <span className="text-[10px] text-indigo-600 shrink-0">{item.note}</span>}
             </motion.div>
           ))}
         </Panel>
@@ -318,10 +171,15 @@ export default function EventLoopDiagram() {
                 backgroundColor: ['rgba(34,211,238,0)', 'rgba(34,211,238,0.12)', 'rgba(34,211,238,0)'],
               } : { x: 0 }}
               transition={{ duration: 0.6, delay: i * 0.12 }}
-              className="flex items-center justify-between text-xs font-mono text-cyan-300 py-1 px-1.5 rounded"
+              className="flex items-start justify-between text-xs font-mono text-cyan-300 py-1 px-1.5 rounded"
             >
-              <span>{item.label}</span>
-              <span className="text-[10px] text-cyan-700">{item.note}</span>
+              <div className="flex flex-col gap-0.5">
+                <span>{item.label}</span>
+                {active === 'micro' && (
+                  <span className="text-[9px] text-cyan-400/60 font-mono">console.log('{item.log}')</span>
+                )}
+              </div>
+              <span className="text-[10px] text-cyan-700 shrink-0">{item.note}</span>
             </motion.div>
           ))}
         </Panel>
@@ -336,15 +194,88 @@ export default function EventLoopDiagram() {
                 backgroundColor: ['rgba(167,139,250,0)', 'rgba(167,139,250,0.12)', 'rgba(167,139,250,0)'],
               } : { x: 0 }}
               transition={{ duration: 0.6, delay: i * 0.12 }}
-              className="flex items-center justify-between text-xs font-mono text-violet-300 py-1 px-1.5 rounded"
+              className="flex items-start justify-between text-xs font-mono text-violet-300 py-1 px-1.5 rounded"
             >
-              <span>{item.label}</span>
-              <span className="text-[10px] text-violet-700">{item.note}</span>
+              <div className="flex flex-col gap-0.5">
+                <span>{item.label}</span>
+                {active === 'macro' && (
+                  <span className="text-[9px] text-violet-400/60 font-mono">console.log('{item.log}')</span>
+                )}
+              </div>
+              <span className="text-[10px] text-violet-700 shrink-0">{item.note}</span>
             </motion.div>
           ))}
         </Panel>
       </div>
 
+      {/* 步骤④：完整执行顺序汇总 */}
+      <AnimatePresence>
+        {active === 'loop' && (
+          <motion.div
+            key="summary"
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.25 }}
+            className="mt-3 rounded-lg border border-white/5 bg-black/30 p-3"
+          >
+            <div className="text-[10px] text-slate-600 font-mono mb-3">// 完整执行顺序</div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <div className="text-[9px] text-indigo-500 font-mono mb-1.5">① 调用栈</div>
+                <div className="space-y-1">
+                  {STACK_ITEMS.map((item, i) => (
+                    <motion.div
+                      key={item.label}
+                      initial={{ opacity: 0, x: -4 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.2, delay: i * 0.05 }}
+                      className="text-[10px] font-mono text-indigo-300/70 flex items-center gap-1"
+                    >
+                      <span className="text-slate-700">›</span>
+                      <span>console.log('{item.log}')</span>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[9px] text-cyan-600 font-mono mb-1.5">② 微任务</div>
+                <div className="space-y-1">
+                  {MICRO_ITEMS.map((item, i) => (
+                    <motion.div
+                      key={item.label}
+                      initial={{ opacity: 0, x: -4 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.2, delay: (STACK_ITEMS.length + i) * 0.05 }}
+                      className="text-[10px] font-mono text-cyan-300/70 flex items-center gap-1"
+                    >
+                      <span className="text-slate-700">›</span>
+                      <span>console.log('{item.log}')</span>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[9px] text-violet-600 font-mono mb-1.5">③ 宏任务</div>
+                <div className="space-y-1">
+                  {MACRO_ITEMS.map((item, i) => (
+                    <motion.div
+                      key={item.label}
+                      initial={{ opacity: 0, x: -4 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.2, delay: (STACK_ITEMS.length + MICRO_ITEMS.length + i) * 0.05 }}
+                      className="text-[10px] font-mono text-violet-300/70 flex items-center gap-1"
+                    >
+                      <span className="text-slate-700">›</span>
+                      <span>console.log('{item.log}')</span>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* 当前步骤说明 */}
       <div className="mt-4 rounded-lg border border-white/5 bg-white/3 p-3">
