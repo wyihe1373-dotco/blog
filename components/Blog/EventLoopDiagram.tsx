@@ -99,9 +99,7 @@ export default function EventLoopDiagram() {
             <motion.div key={item.label} animate={active === 'stack' ? { backgroundColor: ['rgba(99,102,241,0)', 'rgba(99,102,241,0.15)', 'rgba(99,102,241,0)'] } : {}} transition={{ duration: 0.8, delay: i * 0.15, ease: 'easeInOut' }} className="flex items-start justify-between text-xs font-mono text-indigo-300 py-1 px-1.5 rounded">
               <div className="flex flex-col gap-0.5">
                 <span>{item.label}</span>
-                {active === 'stack' && (
-                  <span className="text-[9px] text-indigo-400/60 font-mono">console.log('{item.log}')</span>
-                )}
+                <span className="text-[9px] text-indigo-400/60 font-mono">console.log('{item.log}')</span>
               </div>
               {item.note && <span className="text-[10px] text-indigo-600 shrink-0">{item.note}</span>}
             </motion.div>
@@ -113,9 +111,7 @@ export default function EventLoopDiagram() {
             <motion.div key={item.label} animate={active === 'micro' ? { x: [0, 6, 0], backgroundColor: ['rgba(34,211,238,0)', 'rgba(34,211,238,0.12)', 'rgba(34,211,238,0)'] } : { x: 0 }} transition={{ duration: 0.6, delay: i * 0.12 }} className="flex items-start justify-between text-xs font-mono text-cyan-300 py-1 px-1.5 rounded">
               <div className="flex flex-col gap-0.5">
                 <span>{item.label}</span>
-                {active === 'micro' && (
-                  <span className="text-[9px] text-cyan-400/60 font-mono">console.log('{item.log}')</span>
-                )}
+                <span className="text-[9px] text-cyan-400/60 font-mono">console.log('{item.log}')</span>
               </div>
               <span className="text-[10px] text-cyan-700 shrink-0">{item.note}</span>
             </motion.div>
@@ -127,9 +123,7 @@ export default function EventLoopDiagram() {
             <motion.div key={item.label} animate={active === 'macro' ? { x: [0, 6, 0], backgroundColor: ['rgba(167,139,250,0)', 'rgba(167,139,250,0.12)', 'rgba(167,139,250,0)'] } : { x: 0 }} transition={{ duration: 0.6, delay: i * 0.12 }} className="flex items-start justify-between text-xs font-mono text-violet-300 py-1 px-1.5 rounded">
               <div className="flex flex-col gap-0.5">
                 <span>{item.label}</span>
-                {active === 'macro' && (
-                  <span className="text-[9px] text-violet-400/60 font-mono">console.log('{item.log}')</span>
-                )}
+                <span className="text-[9px] text-violet-400/60 font-mono">console.log('{item.log}')</span>
               </div>
               <span className="text-[10px] text-violet-700 shrink-0">{item.note}</span>
             </motion.div>
@@ -152,9 +146,7 @@ export default function EventLoopDiagram() {
             >
               <div className="flex flex-col gap-0.5">
                 <span>{item.label}</span>
-                {active === 'stack' && (
-                  <span className="text-[9px] text-indigo-400/60 font-mono">console.log('{item.log}')</span>
-                )}
+                <span className="text-[9px] text-indigo-400/60 font-mono">console.log('{item.log}')</span>
               </div>
               {item.note && <span className="text-[10px] text-indigo-600 shrink-0">{item.note}</span>}
             </motion.div>
@@ -175,9 +167,7 @@ export default function EventLoopDiagram() {
             >
               <div className="flex flex-col gap-0.5">
                 <span>{item.label}</span>
-                {active === 'micro' && (
-                  <span className="text-[9px] text-cyan-400/60 font-mono">console.log('{item.log}')</span>
-                )}
+                <span className="text-[9px] text-cyan-400/60 font-mono">console.log('{item.log}')</span>
               </div>
               <span className="text-[10px] text-cyan-700 shrink-0">{item.note}</span>
             </motion.div>
@@ -198,9 +188,7 @@ export default function EventLoopDiagram() {
             >
               <div className="flex flex-col gap-0.5">
                 <span>{item.label}</span>
-                {active === 'macro' && (
-                  <span className="text-[9px] text-violet-400/60 font-mono">console.log('{item.log}')</span>
-                )}
+                <span className="text-[9px] text-violet-400/60 font-mono">console.log('{item.log}')</span>
               </div>
               <span className="text-[10px] text-violet-700 shrink-0">{item.note}</span>
             </motion.div>
@@ -220,58 +208,28 @@ export default function EventLoopDiagram() {
             className="mt-3 rounded-lg border border-white/5 bg-black/30 p-3"
           >
             <div className="text-[10px] text-slate-600 font-mono mb-3">// 完整执行顺序</div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <div className="text-[9px] text-indigo-500 font-mono mb-1.5">① 调用栈</div>
-                <div className="space-y-1">
-                  {STACK_ITEMS.map((item, i) => (
-                    <motion.div
-                      key={item.label}
-                      initial={{ opacity: 0, x: -4 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.2, delay: i * 0.05 }}
-                      className="text-[10px] font-mono text-indigo-300/70 flex items-center gap-1"
-                    >
-                      <span className="text-slate-700">›</span>
-                      <span>console.log('{item.log}')</span>
-                    </motion.div>
-                  ))}
+            <div className="space-y-1">
+              {[
+                ...STACK_ITEMS.map(item => ({ ...item, color: 'text-indigo-300/70', tag: '① 调用栈', tagColor: 'text-indigo-500' })),
+                ...MICRO_ITEMS.map(item => ({ ...item, color: 'text-cyan-300/70', tag: '② 微任务', tagColor: 'text-cyan-600' })),
+                ...MACRO_ITEMS.map(item => ({ ...item, color: 'text-violet-300/70', tag: '③ 宏任务', tagColor: 'text-violet-600' })),
+              ].map((item, i, arr) => (
+                <div key={item.label}>
+                  <motion.div
+                    initial={{ opacity: 0, x: -4 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.2, delay: i * 0.04 }}
+                    className={`text-[10px] font-mono ${item.color} flex items-center gap-2`}
+                  >
+                    <span className="text-slate-700">›</span>
+                    <span className="flex-1">console.log('{item.log}')</span>
+                    <span className={`text-[9px] ${item.tagColor}`}>{item.tag}</span>
+                  </motion.div>
+                  {i < arr.length - 1 && (
+                    <div className="text-[9px] text-slate-800 font-mono ml-3 leading-3">↓</div>
+                  )}
                 </div>
-              </div>
-              <div>
-                <div className="text-[9px] text-cyan-600 font-mono mb-1.5">② 微任务</div>
-                <div className="space-y-1">
-                  {MICRO_ITEMS.map((item, i) => (
-                    <motion.div
-                      key={item.label}
-                      initial={{ opacity: 0, x: -4 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.2, delay: (STACK_ITEMS.length + i) * 0.05 }}
-                      className="text-[10px] font-mono text-cyan-300/70 flex items-center gap-1"
-                    >
-                      <span className="text-slate-700">›</span>
-                      <span>console.log('{item.log}')</span>
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="text-[9px] text-violet-600 font-mono mb-1.5">③ 宏任务</div>
-                <div className="space-y-1">
-                  {MACRO_ITEMS.map((item, i) => (
-                    <motion.div
-                      key={item.label}
-                      initial={{ opacity: 0, x: -4 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.2, delay: (STACK_ITEMS.length + MICRO_ITEMS.length + i) * 0.05 }}
-                      className="text-[10px] font-mono text-violet-300/70 flex items-center gap-1"
-                    >
-                      <span className="text-slate-700">›</span>
-                      <span>console.log('{item.log}')</span>
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
+              ))}
             </div>
           </motion.div>
         )}

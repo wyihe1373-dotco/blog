@@ -1,0 +1,180 @@
+---
+title: "JS 模块系统：CommonJS vs ESM"
+description: "require 和 import 到底有什么区别，具名导出和默认导出怎么选，一次说清楚"
+date: "2026-03-12"
+tags: ["JavaScript", "ES6"]
+---
+
+## 为什么有两套模块系统
+
+JS 最早没有官方的模块系统，Node.js 自己搞了一套 CommonJS（`require`）。后来 ES6 出了官方标准 ESM（`import/export`），浏览器和 Node.js 都支持，但两套系统同时存在，经常搞混。
+
+---
+
+## CommonJS（require）
+
+Node.js 的老方式，`.js` 文件默认就是 CommonJS。
+
+```js
+// 导出
+const add = (a, b) => a + b
+module.exports = { add }
+
+// 导入
+const { add } = require('./math')
+```
+
+特点：
+- **同步加载**，适合服务端（文件在本地，读取很快）
+- `require` 可以写在任意位置，动态调用
+- 导出的是值的**拷贝**，修改导出对象不影响原模块
+
+---
+
+## ESM（import/export）
+
+ES6 官方标准，现代浏览器和 Node.js（`.mjs` 或设置 `"type": "module"`）都支持。
+
+```js
+// 导出
+export const add = (a, b) => a + b
+
+// 导入
+import { add } from './math.js'
+```
+
+特点：
+- **静态分析**，`import` 必须写在文件顶层，不能动态调用
+- 导出的是**实时绑定**，原模块变了，导入方也会更新
+- 支持 Tree Shaking（打包工具可以删掉没用到的代码）
+
+---
+
+## 两者对比
+
+| | CommonJS | ESM |
+|---|---|---|
+| 语法 | `require` / `module.exports` | `import` / `export` |
+| 加载方式 | 同步，运行时加载 | 异步，编译时静态分析 |
+| 动态导入 | ✅ 可以在任意位置 `require` | ❌ `import` 必须在顶层（动态用 `import()`） |
+| Tree Shaking | ❌ 不支持 | ✅ 支持 |
+| 浏览器原生支持 | ❌ 需要打包工具 | ✅ 现代浏览器直接支持 |
+| Node.js 默认 | ✅ `.js` 默认就是 | 需要 `.mjs` 或 `"type": "module"` |
+| 适用场景 | Node.js 脚本、老项目 | 现代前端项目、新 Node.js 项目 |
+
+**结论**：新项目统一用 ESM，老 Node.js 脚本用 CommonJS 也没问题，别混用就行。
+
+---
+
+## 具名导出 vs 默认导出
+
+### 具名导出（Named Export）
+
+```js
+// 导出多个
+export const foo = 1
+export const bar = 2
+export function baz() {}
+
+// 导入时名字必须对得上
+import { foo, bar, baz } from './module'
+
+// 可以重命名
+import { foo as myFoo } from './module'
+```
+
+### 默认导出（Default Export）
+
+```js
+// 一个文件只能有一个默认导出
+export default function Button() {}
+
+// 导入时可以用任意名字
+import Button from './Button'
+import MyBtn from './Button'  // 也行
+```
+
+### 怎么选
+
+| 场景 | 用哪个 |
+|------|--------|
+| 一个文件导出一个主要东西（组件、类） | 默认导出 |
+| 一个文件导出多个工具函数 | 具名导出 |
+| 需要 Tree Shaking 优化包体积 | 具名导出 |
+
+React 组件通常用默认导出；工具函数库（lodash 风格）用具名导出。
+
+---
+
+## 混用的坑
+
+CommonJS 导入 ESM 会报错，反过来也麻烦。项目里最好统一用一种。
+
+现代前端项目（Vite / Next.js）基本都是 ESM，Node.js 脚本如果沿用旧习惯用 `require` 也没问题，但别在同一个文件里混着写。
+
+```js
+// ❌ 不能混用
+import fs from 'fs'
+const path = require('path')  // SyntaxError
+```
+
+判断当前用的是哪种：看 `package.json` 里有没有 `"type": "module"`，有的话整个项目默认 ESM，否则默认 CommonJS。
+
+---
+
+## 真实案例：Nuxt 迁移到 Vite SPA
+
+这不是理论问题，我在把一个 Nuxt 项目迁移到 Vite 时就踩了这个坑。
+
+**原来 Nuxt + webpack 的写法**，到处用 `require()`：
+
+```js
+// 动态加载图片（webpack 时代的习惯）
+const icon = isDark
+  ? require('~/assets/images/huili-dark.png')
+  : require('~/assets/images/huili-light.png')
+
+// 条件加载模块
+if (needCaptcha) {
+  require('@lb-public/gt-sense')
+}
+```
+
+**迁移到 Vite 后**，`package.json` 加了 `"type": "module"`，整个项目变成 ESM，这些 `require` 直接报错：
+
+```
+ReferenceError: require is not defined
+```
+
+**短期方案：加 `viteCommonjs` 插件桥接**
+
+```js
+// vite.config.js
+import { viteCommonjs } from '@originjs/vite-plugin-commonjs'
+
+export default defineConfig({
+  plugins: [
+    viteCommonjs(), // 让 Vite 能处理残留的 require()
+    vue(),
+  ]
+})
+```
+
+这样不用一次改完所有 `require`，项目先跑起来。
+
+**长期方案：改成 ESM 写法**
+
+```js
+// 动态图片用 new URL（Vite 推荐方式）
+const icon = new URL(
+  isDark ? '../assets/images/huili-dark.png' : '../assets/images/huili-light.png',
+  import.meta.url
+).href
+
+// 条件加载模块用动态 import()
+if (needCaptcha) {
+  const { default: GtSense } = await import('@lb-public/gt-sense')
+}
+```
+
+迁移的核心思路：**先用插件兜底让项目跑起来，再逐步把 `require` 替换成 ESM 写法**，不用一口气全改。

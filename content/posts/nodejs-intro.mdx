@@ -1,70 +1,41 @@
 ---
-title: "我是怎么从零开始用 Node.js 的"
+title: "Node.js 学习"
 description: "不是教程，是我自己的使用路径——从第一次跑 npm 到写脚本、搭服务，踩过的坑和用熟的那些模式"
 date: "2026-03-11"
 tags: ["学习笔记", "前端工程"]
 ---
 
-说实话，我最开始对 Node.js 完全没概念。刚入门前端的时候，看到 `npm install` 就照着敲，只知道能用，不知道这玩意儿背后跑的是什么。
-
-后来项目越做越多，慢慢摸清楚了——**Node.js 就是让 JS 能在浏览器外面跑的环境**。你的电脑、服务器上，都能直接执行 JS 文件。
-
----
-
-## 我是怎么开始的
-
-最开始真的就是被 npm 带进来的。
-
-`npm run dev`、`npm run build`——这些命令背后其实都是 Node.js 在执行脚本。Vite、Webpack、ESLint 这些工具，全是 Node.js 程序。我发现自己每天都在用，只是没意识到。
-
-真正「主动」用 Node.js，是有次需要批量重命名一批图片文件。直接用 JS 写，十几行搞定，语法还是熟悉的——这是我第一次意识到 Node.js 对前端来说有多顺手。
-
----
+Node.js 让 JS 能在浏览器外跑。装好后 `node hello.js` 就能直接执行，不需要编译，不需要打包。
 
 ## 我实际用它干了什么
 
 ### 1. 写构建脚本
 
-这个博客用的是 Next.js 静态导出，构建的时候 Node.js 做了一堆事情：
+脚本有两种用法：
 
-```js
-// Next.js 底层大概是这么读文章的
-const fs = require('fs')
-const path = require('path')
+- **集成进项目**：放 `scripts/deploy.mjs`，`package.json` 里注册 `"deploy": "node scripts/deploy.mjs"`，`npm run deploy` 触发，属于项目代码，进 git
+- **临时跑一次**：随便建个 `convert.js`，`node convert.js` 跑完就删，不用注册
 
-const postsDir = path.join(process.cwd(), 'content/posts')
-const files = fs.readdirSync(postsDir)  // 读取所有 .mdx 文件
+### 2. 处理文件
 
-files.forEach(file => {
-  const content = fs.readFileSync(path.join(postsDir, file), 'utf-8')
-  // 解析 frontmatter，提取 title、date、tags...
-})
-```
-
-我 `npm run build` 一下，Node.js 就把所有 MDX 文件读进来、编译成 HTML、生成 `out/` 目录。整个流程就是一个 Node.js 程序在跑。
-
-### 2. 处理图片资源
-
-做这个博客的时候需要把地球贴图转成合适的格式，我写了个简单脚本：
+做这个博客需要把地球贴图批量转格式，写了个临时脚本：
 
 ```js
 const { execSync } = require('child_process')
 const fs = require('fs')
 
-// 批量把 png 转 webp
 fs.readdirSync('./public').forEach(file => {
   if (file.endsWith('.png')) {
     execSync(`sips -s format webp ./public/${file} --out ./public/${file.replace('.png', '.webp')}`)
-    console.log(`done: ${file}`)
   }
 })
 ```
 
-调用系统命令、读写文件，这种活儿用 Node.js 写很顺手。
+跑完就删，不进 git。
 
 ### 3. 跑本地服务
 
-有几次需要临时起一个静态文件服务：
+临时起一个静态文件服务：
 
 ```js
 const http = require('http')
@@ -73,27 +44,20 @@ const path = require('path')
 
 http.createServer((req, res) => {
   const file = path.join('./dist', req.url === '/' ? 'index.html' : req.url)
-  if (fs.existsSync(file)) {
-    res.end(fs.readFileSync(file))
-  } else {
-    res.writeHead(404)
-    res.end('not found')
-  }
+  fs.existsSync(file) ? res.end(fs.readFileSync(file)) : (res.writeHead(404), res.end('not found'))
 }).listen(8080)
 
 console.log('http://localhost:8080')
 ```
 
-`node server.js` 直接跑，查完就关。
-
 ### 4. 接口 mock
 
-联调前后端经常要等接口，我会本地起一个简单的 mock：
+联调等接口时本地起个 mock：
 
 ```js
 const http = require('http')
 
-const mockData = {
+const data = {
   '/api/user': { id: 1, name: '王一贺', role: 'admin' },
   '/api/posts': [{ id: 1, title: '测试文章' }],
 }
@@ -101,52 +65,25 @@ const mockData = {
 http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json')
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.end(JSON.stringify(mockData[req.url] ?? { error: 'not found' }))
+  res.end(JSON.stringify(data[req.url] ?? { error: 'not found' }))
 }).listen(3001)
 ```
 
-前端直接对着 3001 跑，不用等后端。后来换成 `json-server` 这类工具了，但原理一样。
+如果团队共用就放进 git，个人临时用直接跑完删。后来换成 `json-server` 了，原理一样。
 
 ---
 
 ## 踩过的坑
 
-**`require` vs `import`**
+**`require` vs `import`**：Node.js 默认 CommonJS，文件名 `.mjs` 或 `package.json` 设 `"type": "module"` 才能用 `import`。现在用 TypeScript 就没这烦恼了。
 
-Node.js 原本用 CommonJS（`require`），ES Module（`import/export`）是后来才支持的。刚开始经常搞混，在 `.js` 文件里写了 `import` 然后报错。
+**异步**：文件、网络操作都是异步的，早期没搞清楚，取到的值是 `undefined`。后来习惯了 `async/await`，小脚本直接用 `fs.readFileSync`。
 
-规律是：文件名 `.mjs` 或者 `package.json` 里设 `"type": "module"` 才能用 `import`，否则用 `require`。现在用 TypeScript + ts-node 就没这个烦恼了。
-
-**异步处理**
-
-Node.js 的文件、网络操作都是异步的，早期没搞清楚经常写出这种代码：
-
-```js
-// 错误示范：以为是同步的
-fs.readFile('./data.json', (err, data) => {
-  result = JSON.parse(data)
-})
-console.log(result)  // undefined！还没读完呢
-```
-
-后来习惯了 `async/await` 或者直接用 `fs.readFileSync`（小文件、脚本场景没问题）。
-
-**路径问题**
-
-`./file.json` 的相对路径是相对于**执行命令时的目录**，不是文件所在目录。经常从项目根目录跑脚本但脚本在子目录里，路径对不上。
-
-解决方案：用 `__dirname`（CommonJS）或 `import.meta.url`（ESM）获取当前文件的绝对路径：
-
-```js
-const path = require('path')
-const filePath = path.join(__dirname, '../data/config.json')
-```
+**路径**：`./file.json` 相对的是**执行命令时的目录**，不是脚本文件位置。用 `path.join(__dirname, '../data.json')` 才稳。
 
 ---
 
-## 现在常用的那些东西
-
-用下来，真正高频的就这几个：
+## 常用的几个
 
 | 场景 | 用法 |
 |------|------|
@@ -155,7 +92,3 @@ const filePath = path.join(__dirname, '../data/config.json')
 | 执行命令 | `child_process.execSync('git status')` |
 | 环境变量 | `process.env.NODE_ENV` |
 | 项目根目录 | `process.cwd()` |
-
-这几个基本够覆盖日常脚本需求了。
-
-

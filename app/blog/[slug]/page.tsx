@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import matter from 'gray-matter'
 import { MDXRemote } from 'next-mdx-remote/rsc'
+import remarkGfm from 'remark-gfm'
 import PostNav from './PostNav'
 import EventLoopDiagram from '@/components/Blog/EventLoopDiagram'
 
@@ -67,6 +68,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
         <article className="post-body">
           <MDXRemote
             source={content}
+            options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }}
             components={{
               pre: ({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) => (
                 <div className="code-block">
