@@ -3,6 +3,7 @@ import { useRef, useState, useEffect } from 'react'
 import { motion, useInView, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import type { PostMeta } from '@/lib/posts'
+import { BeamCard } from './BeamCard'
 
 const MotionLink = motion(Link)
 
@@ -84,45 +85,36 @@ export default function BlogCarousel({ posts }: { posts: PostMeta[] }) {
           {filtered.map((post, i) => (
             <motion.div
               key={post.slug}
-              className="relative rounded-2xl overflow-hidden p-px w-[calc(100vw-3rem)] sm:w-80 md:w-88"
+              className="w-[calc(100vw-3rem)] sm:w-80 md:w-88"
               initial={{ opacity: 0, y: 20, scale: 0.97 }}
               animate={inView ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 20, scale: 0.97 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ delay: i * 0.05, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
               layout
             >
-              {/* Rotating light band */}
-              <motion.div
-                className="absolute -inset-full pointer-events-none"
-                style={{
-                  background: 'conic-gradient(from 0deg, transparent 0%, #6366f1 15%, #a78bfa 22%, #22d3ee 28%, transparent 40%)',
-                }}
-                animate={{ rotate: 360 }}
-                transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
-              />
+              <BeamCard borderRadius={16} className="rounded-2xl">
+                <MotionLink
+                  href={`/blog/${post.slug}/`}
+                  onClick={() => sessionStorage.setItem('homepage-scroll', String(window.scrollY))}
+                  className="rounded-2xl p-6 group transition-all block h-full border border-white/5"
+                  style={{ background: 'rgba(7, 7, 24, 0.95)', backdropFilter: 'blur(12px)' }}
+                >
+                  <div className="flex gap-2 flex-wrap mb-3">
+                    {post.tags.slice(0, 2).map(tag => (
+                      <span key={tag} className="text-xs font-mono text-accent bg-accent/10 px-2 py-1 rounded">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
 
-              {/* Card */}
-              <MotionLink
-                href={`/blog/${post.slug}/`}
-                onClick={() => sessionStorage.setItem('homepage-scroll', String(window.scrollY))}
-                className="relative rounded-[14px] p-6 group transition-all block h-full"
-                style={{ background: 'rgba(7, 7, 24, 0.95)', backdropFilter: 'blur(12px)' }}
-              >
-                <div className="flex gap-2 flex-wrap mb-3">
-                  {post.tags.slice(0, 2).map(tag => (
-                    <span key={tag} className="text-xs font-mono text-accent bg-accent/10 px-2 py-1 rounded">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
+                  <h3 className="text-white font-semibold text-lg mb-2 group-hover:text-primary transition-colors leading-tight">
+                    {post.title}
+                  </h3>
+                  <p className="text-slate-400 text-sm mb-4 line-clamp-3">{post.description}</p>
 
-                <h3 className="text-white font-semibold text-lg mb-2 group-hover:text-primary transition-colors leading-tight">
-                  {post.title}
-                </h3>
-                <p className="text-slate-400 text-sm mb-4 line-clamp-3">{post.description}</p>
-
-                <span className="text-xs text-slate-500 font-mono">{post.date}</span>
-              </MotionLink>
+                  <span className="text-xs text-slate-500 font-mono">{post.date}</span>
+                </MotionLink>
+              </BeamCard>
             </motion.div>
           ))}
         </AnimatePresence>
