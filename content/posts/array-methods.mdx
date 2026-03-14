@@ -194,3 +194,89 @@ const range = Array.from({ length: 10 }, (_, i) => i + 1)
 ```
 
 最后这个 `Array.from({ length: n }, (_, i) => ...)` 的写法在生成骨架屏占位、序号列表时很好用。
+
+---
+
+## 去重
+
+### 不影响原数组（推荐）
+
+```javascript
+const arr = [1, 2, 2, 3, 3, 4]
+
+// Set + 展开
+const unique1 = [...new Set(arr)]
+// [1, 2, 3, 4]
+
+// Array.from + Set
+const unique2 = Array.from(new Set(arr))
+// [1, 2, 3, 4]
+
+// filter + indexOf（可以拿到去重后的索引）
+const unique3 = arr.filter((item, index) => arr.indexOf(item) === index)
+// [1, 2, 3, 4]
+```
+
+对象数组按字段去重：
+
+```javascript
+const users = [
+  { id: 1, name: '张三' },
+  { id: 2, name: '李四' },
+  { id: 1, name: '张三（重复）' },
+]
+
+// Map 按 key 去重，保留第一次出现的
+const map = new Map()
+const unique = users.filter(u => !map.has(u.id) && map.set(u.id, true))
+// [{ id: 1, name: '张三' }, { id: 2, name: '李四' }]
+```
+
+### 会改变原数组的方式
+
+直接用 `splice` 原地删重复项——**会修改原数组**，一般不推荐：
+
+```javascript
+const arr = [1, 2, 2, 3, 3, 4]
+
+for (let i = arr.length - 1; i >= 0; i--) {
+  if (arr.indexOf(arr[i]) !== i) {
+    arr.splice(i, 1)  // ⚠️ 原地删除
+  }
+}
+// arr 本身变成 [1, 2, 3, 4]
+```
+
+从后往前遍历是为了避免 `splice` 删元素后下标错位。
+
+---
+
+## 哪些方法会改变原数组
+
+容易踩坑的是：**以为返回了新数组，其实原数组也变了**。
+
+| 会改变原数组 | 返回新数组（原数组不变） |
+|---|---|
+| `push` / `pop` | `map` |
+| `shift` / `unshift` | `filter` |
+| `splice` | `reduce` |
+| `sort` | `slice` |
+| `reverse` | `concat` |
+| `fill` | `flat` / `flatMap` |
+| `copyWithin` | `find` / `findIndex` |
+
+`sort` 和 `reverse` 是最容易被忽视的——看起来像纯查询，实际上是原地操作。
+
+```javascript
+const original = [3, 1, 2]
+
+// ❌ 以为 sorted 是新数组，其实 original 也变了
+const sorted = original.sort((a, b) => a - b)
+console.log(original) // [1, 2, 3] — 已被修改
+
+// ✅ 先复制一份
+const sorted2 = [...original].sort((a, b) => a - b)
+console.log(original) // 不变
+```
+
+`slice` 和 `splice` 名字很像，记住：**slice 不改原数组，splice 改**。
