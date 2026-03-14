@@ -38,7 +38,7 @@ export default function Hero() {
 
       <div className="relative z-10 w-full max-w-6xl mx-auto px-6 flex items-center justify-center py-10 sm:py-0">
 
-        <div className="flex-1 text-center sm:text-left">
+        <div className="flex-1 text-center">
           <motion.p
             className="shimmer-text font-mono text-sm tracking-widest mb-4"
             initial={{ opacity: 0, y: 20 }}
@@ -49,7 +49,7 @@ export default function Hero() {
           </motion.p>
 
           <motion.h1
-            className="text-4xl md:text-7xl font-bold text-white mb-4 flex justify-center sm:justify-start gap-[0.05em]"
+            className="text-4xl md:text-7xl font-bold text-white mb-4 flex justify-center gap-[0.05em]"
             initial="hidden"
             animate="visible"
             variants={{
