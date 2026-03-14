@@ -3,12 +3,12 @@ import { useRef, useEffect } from 'react'
 
 // ── Config ────────────────────────────────────────────────
 const CFG = {
-  headGlow: 7,
+  headGlow: 6,
   tailPct:  0.20,
-  tailGlow: 0.5,
-  alphaPow: 1.9,
+  tailGlow: 2,
+  alphaPow: 2.8,   // 高衰减幂次 → 尾部 alpha 极低，视觉上仍"细"
   durMs:    2600,
-  steps:    50,
+  steps:    60,
   gb:       18,
 }
 
