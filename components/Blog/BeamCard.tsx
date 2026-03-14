@@ -3,13 +3,13 @@ import { useRef, useEffect } from 'react'
 
 // ── Config ────────────────────────────────────────────────
 const CFG = {
-  headGlow: 9,
-  tailPct:  0.12,
-  tailGlow: 1.5,
-  alphaPow: 2,
+  headGlow: 7,
+  tailPct:  0.20,
+  tailGlow: 0.5,
+  alphaPow: 1.9,
   durMs:    2600,
-  steps:    38,
-  gb:       18,   // canvas bleed beyond card edge
+  steps:    50,
+  gb:       18,
 }
 
 // ── Path helpers ─────────────────────────────────────────
@@ -68,11 +68,10 @@ function drawComet(
   pathEl: SVGPathElement,
   headDist: number,
   perim: number,
-  color: [number, number, number],
+  r: number, g: number, b: number,
 ) {
   const { headGlow, tailGlow, tailPct, alphaPow, steps } = CFG
   const cometLen = perim * tailPct
-  const [r, g, b] = color
 
   for (let comet = 0; comet < 2; comet++) {
     const head = headDist + comet * (perim / 2)
@@ -97,7 +96,6 @@ function drawComet(
       ctx.fillStyle = grd
       ctx.fill()
 
-      // Extra bright core near head
       if (t > 0.85) {
         const coreAlpha = ((t - 0.85) / 0.15) * alpha
         const coreR     = radius * 0.35
@@ -119,33 +117,43 @@ interface BeamCardProps {
   children: React.ReactNode
   className?: string
   borderRadius?: number
+  /** RGB tuple, default indigo */
   color?: [number, number, number]
 }
+
+const DEFAULT_COLOR: [number, number, number] = [99, 102, 241]
 
 export function BeamCard({
   children,
   className = '',
   borderRadius = 14,
-  color = [99, 102, 241],
+  color = DEFAULT_COLOR,
 }: BeamCardProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef    = useRef<HTMLCanvasElement>(null)
   const rafRef       = useRef<number>(0)
   const startRef     = useRef<number>(0)
+  const visibleRef   = useRef<boolean>(true)
+  // stable refs so frame closure never captures stale values
   const pathElRef    = useRef<SVGPathElement | null>(null)
   const perimRef     = useRef<number>(0)
   const borderRef    = useRef<Path2D | null>(null)
   const donutRef     = useRef<Path2D | null>(null)
+  const ctxRef       = useRef<CanvasRenderingContext2D | null>(null)
+  const colorRef     = useRef(color)
+  colorRef.current   = color
   const { gb }       = CFG
 
   useEffect(() => {
-    const container = containerRef.current
-    const canvas    = canvasRef.current
-    if (!container || !canvas) return
+    if (!containerRef.current || !canvasRef.current) return
+    const container = containerRef.current as HTMLDivElement
+    const canvas    = canvasRef.current as HTMLCanvasElement
+
+    ctxRef.current = canvas.getContext('2d')
 
     // Off-screen SVG for getPointAtLength / getTotalLength
-    const ns  = 'http://www.w3.org/2000/svg'
-    const svg = document.createElementNS(ns, 'svg') as SVGSVGElement
+    const ns     = 'http://www.w3.org/2000/svg'
+    const svg    = document.createElementNS(ns, 'svg') as SVGSVGElement
     svg.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;pointer-events:none'
     const pathEl = document.createElementNS(ns, 'path') as SVGPathElement
     svg.appendChild(pathEl)
@@ -153,18 +161,18 @@ export function BeamCard({
     pathElRef.current = pathEl
 
     function setup() {
-      const w   = container!.clientWidth
-      const h   = container!.clientHeight
+      const w   = container.clientWidth
+      const h   = container.clientHeight
       const r   = borderRadius
       const dpr = window.devicePixelRatio || 1
-      canvas!.width        = (w + gb * 2) * dpr
-      canvas!.height       = (h + gb * 2) * dpr
-      canvas!.style.width  = `${w + gb * 2}px`
-      canvas!.style.height = `${h + gb * 2}px`
-      canvas!.style.left   = `-${gb}px`
-      canvas!.style.top    = `-${gb}px`
+      canvas.width        = (w + gb * 2) * dpr
+      canvas.height       = (h + gb * 2) * dpr
+      canvas.style.width  = `${w + gb * 2}px`
+      canvas.style.height = `${h + gb * 2}px`
+      canvas.style.left   = `-${gb}px`
+      canvas.style.top    = `-${gb}px`
       pathEl.setAttribute('d', borderPathStr(w, h, r))
-      perimRef.current = pathEl.getTotalLength()
+      perimRef.current  = pathEl.getTotalLength()
       borderRef.current = makeBorderPath2D(w, h, r)
       donutRef.current  = makeDonutClip(w, h, r, gb)
     }
@@ -173,54 +181,66 @@ export function BeamCard({
     startRef.current = performance.now()
 
     function frame(now: number) {
-      const progress = ((now - startRef.current) % CFG.durMs) / CFG.durMs
-      const ctx = canvas!.getContext('2d')
+      rafRef.current = requestAnimationFrame(frame)
+
+      if (!visibleRef.current) return   // off-screen → skip draw, keep timer
+
+      const ctx = ctxRef.current
       if (!ctx) return
 
-      const dpr = window.devicePixelRatio || 1
-      ctx.clearRect(0, 0, canvas!.width, canvas!.height)
+      const progress = ((now - startRef.current) % CFG.durMs) / CFG.durMs
+      const dpr      = window.devicePixelRatio || 1
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
 
       const opacity  = getOpacity(progress)
       const headDist = getHeadDist(progress, perimRef.current)
+      const [cr, cg, cb] = colorRef.current
 
       ctx.save()
       ctx.scale(dpr, dpr)
       ctx.translate(gb, gb)
 
       if (opacity > 0.005) {
-        // Dim border ring
         ctx.save()
-        ctx.globalAlpha  = opacity * 0.2
-        ctx.strokeStyle  = `rgb(${color[0]},${color[1]},${color[2]})`
-        ctx.lineWidth    = 1
-        ctx.shadowBlur   = 3
-        ctx.shadowColor  = `rgb(${color[0]},${color[1]},${color[2]})`
+        ctx.globalAlpha = opacity * 0.2
+        ctx.strokeStyle = `rgb(${cr},${cg},${cb})`
+        ctx.lineWidth   = 1
+        ctx.shadowBlur  = 3
+        ctx.shadowColor = `rgb(${cr},${cg},${cb})`
         ctx.stroke(borderRef.current!)
         ctx.restore()
 
-        // Comet (clipped to outside card only)
         ctx.save()
         ctx.clip(donutRef.current!, 'evenodd')
         ctx.globalAlpha = opacity
-        drawComet(ctx, pathEl, headDist, perimRef.current, color)
+        drawComet(ctx, pathElRef.current!, headDist, perimRef.current, cr, cg, cb)
         ctx.restore()
       }
 
       ctx.restore()
-      rafRef.current = requestAnimationFrame(frame)
     }
 
     rafRef.current = requestAnimationFrame(frame)
+
+    // Pause drawing when card is off-screen
+    const io = new IntersectionObserver(
+      ([entry]) => { visibleRef.current = entry.isIntersecting },
+      { threshold: 0.05 },
+    )
+    io.observe(container)
 
     const ro = new ResizeObserver(setup)
     ro.observe(container)
 
     return () => {
       cancelAnimationFrame(rafRef.current)
+      io.disconnect()
       ro.disconnect()
       document.body.removeChild(svg)
     }
-  }, [borderRadius, color, gb])
+  // borderRadius is stable; color is read via colorRef → no array re-run issue
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [borderRadius, gb])
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
