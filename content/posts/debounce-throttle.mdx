@@ -1,0 +1,229 @@
+---
+title: "防抖、节流与竞态问题"
+description: "防抖和节流的定义、区别、手写实现，以及异步请求中竞态问题的常见场景和解决方案"
+date: "2026-03-14"
+tags: ["JavaScript", "性能", "异步"]
+---
+
+防抖和节流是控制函数调用频率的两种手段，经常一起出现，但适用场景完全不同。竞态问题是另一类问题——不是调用太频繁，而是多个异步操作的结果顺序不可控。
+
+---
+
+## 防抖（debounce）
+
+**触发后等待一段时间再执行，如果期间再次触发则重新计时。**
+
+适合"等用户停下来再做"的场景：搜索框输入、窗口 resize 后重新计算布局。
+
+```javascript
+function debounce(fn, delay) {
+  let timer = null
+  return function (...args) {
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      fn.apply(this, args)
+    }, delay)
+  }
+}
+
+// 用法
+const onSearch = debounce((value) => {
+  fetchSearchResults(value)
+}, 300)
+
+input.addEventListener('input', e => onSearch(e.target.value))
+```
+
+用户连续输入时，只有停止输入 300ms 后才真正发请求。
+
+---
+
+## 节流（throttle）
+
+**固定时间间隔内只执行一次，多余的调用被丢弃。**
+
+适合"持续触发但要限制频率"的场景：滚动监听、鼠标移动、拖拽。
+
+```javascript
+function throttle(fn, interval) {
+  let lastTime = 0
+  return function (...args) {
+    const now = Date.now()
+    if (now - lastTime >= interval) {
+      lastTime = now
+      fn.apply(this, args)
+    }
+  }
+}
+
+// 用法
+const onScroll = throttle(() => {
+  updateScrollProgress()
+}, 100)
+
+window.addEventListener('scroll', onScroll)
+```
+
+滚动时每 100ms 最多执行一次，不会因为滚动事件的高频触发把主线程打满。
+
+---
+
+## 区别对比
+
+| | 防抖 | 节流 |
+|---|---|---|
+| 执行时机 | 停止触发后延迟执行 | 固定间隔执行一次 |
+| 连续触发时 | 一直重置，只执行最后一次 | 均匀执行，不会全跳过 |
+| 典型场景 | 搜索输入、表单校验 | 滚动、拖拽、resize |
+| 类比 | 等电梯——有人进来就重新等 | 地铁——固定班次，中间的等下班 |
+
+---
+
+## 竞态问题（Race Condition）
+
+防抖解决了"发太多请求"的问题，但没解决**响应顺序错乱**的问题。
+
+### 典型场景：搜索框
+
+用户快速输入"前端"，防抖没来得及拦截，发出了两个请求：
+
+```
+请求 A：搜索"前"    → 200ms 后返回（慢）
+请求 B：搜索"前端"  → 100ms 后返回（快）
+```
+
+请求 B 先回来显示了"前端"的结果，然后请求 A 才回来，把结果**覆盖成了"前"的搜索结果**。
+
+页面显示的是旧数据，但用户输入的是新词——这就是竞态问题。
+
+---
+
+## 解决方案一：取消上一次请求（AbortController）
+
+每次发新请求前，把上一次的请求中断掉，彻底消灭旧响应。
+
+```javascript
+let controller = null
+
+async function search(query) {
+  // 中断上一次请求
+  if (controller) {
+    controller.abort()
+  }
+  controller = new AbortController()
+
+  try {
+    const res = await fetch(`/api/search?q=${query}`, {
+      signal: controller.signal
+    })
+    const data = await res.json()
+    renderResults(data)
+  } catch (err) {
+    if (err.name === 'AbortError') return  // 主动取消，忽略
+    throw err
+  }
+}
+```
+
+优点：请求真的被取消了，不浪费网络资源。
+缺点：需要后端支持中断（大多数现代浏览器 + fetch 原生支持）。
+
+---
+
+## 解决方案二：版本号（忽略过期响应）
+
+给每次请求打上版本号，回调时只处理最新版本的结果。
+
+```javascript
+let latestVersion = 0
+
+async function search(query) {
+  const version = ++latestVersion
+
+  const data = await fetchSearch(query)
+
+  // 如果已经有更新的请求在飞了，丢弃这个结果
+  if (version !== latestVersion) return
+
+  renderResults(data)
+}
+```
+
+简单直接，不依赖 AbortController，兼容任何异步方式（axios、自定义请求库等）。
+缺点：旧请求还是在跑，只是结果被忽略了。
+
+---
+
+## 解决方案三：React 里用 useEffect 清理
+
+在 React 中，`useEffect` 的清理函数天然适合做这件事：
+
+```javascript
+function SearchResults({ query }) {
+  const [results, setResults] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetchSearch(query).then(data => {
+      if (!cancelled) setResults(data)
+    })
+
+    return () => {
+      cancelled = true  // 组件更新或卸载时，标记旧请求作废
+    }
+  }, [query])
+
+  return <ResultList items={results} />
+}
+```
+
+每次 `query` 变化，上一次 effect 的清理函数先跑，把 `cancelled` 置为 `true`，旧响应回来后 `setResults` 不会执行。
+
+---
+
+## 常见竞态场景
+
+| 场景 | 问题 | 推荐方案 |
+|---|---|---|
+| 搜索框实时搜索 | 快速输入，旧结果覆盖新结果 | AbortController + 防抖 |
+| Tab 切换加载数据 | 快速切换，上一个 Tab 的数据后到 | 版本号 / useEffect 清理 |
+| 分页加载 | 翻页过快，第 2 页结果比第 3 页后到 | AbortController |
+| 表单提交防重复 | 快速点击提交，同一条数据入库多次 | 提交后禁用按钮 + 节流 |
+| 轮询更新 | 前一次轮询慢，返回时覆盖了新数据 | 版本号 |
+| 路由跳转取数 | 离开页面后请求才回来，操作了已卸载组件 | useEffect 清理 / AbortController |
+
+---
+
+## 实际推荐写法
+
+搜索框完整示例，防抖 + AbortController 组合使用：
+
+```javascript
+function useSearch(delay = 300) {
+  const [results, setResults] = useState([])
+  const controllerRef = useRef(null)
+
+  const search = useMemo(() => debounce(async (query) => {
+    if (!query) return setResults([])
+
+    if (controllerRef.current) {
+      controllerRef.current.abort()
+    }
+    controllerRef.current = new AbortController()
+
+    try {
+      const res = await fetch(`/api/search?q=${query}`, {
+        signal: controllerRef.current.signal
+      })
+      setResults(await res.json())
+    } catch (err) {
+      if (err.name !== 'AbortError') console.error(err)
+    }
+  }, delay), [delay])
+
+  return { results, search }
+}
+```
+
+防抖负责减少请求数量，AbortController 负责保证只有最新的响应生效——两者搭配才是完整方案。
