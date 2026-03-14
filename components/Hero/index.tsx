@@ -4,7 +4,6 @@ import dynamic from 'next/dynamic'
 import Typewriter from './Typewriter'
 
 const Particles = dynamic(() => import('@/components/Particles'), { ssr: false })
-const Globe = dynamic(() => import('./Globe'), { ssr: false })
 
 export default function Hero() {
   return (
@@ -33,11 +32,9 @@ export default function Hero() {
       {/* Gradient overlay */}
       <div className="absolute inset-0 bg-linear-to-b from-transparent via-transparent to-background pointer-events-none" />
 
-      {/* Two-column layout */}
-      <div className="relative z-10 w-full max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center gap-2 sm:gap-0 py-10 sm:py-0">
+      <div className="relative z-10 w-full max-w-6xl mx-auto px-6 flex items-center justify-center py-10 sm:py-0">
 
-        {/* Text — bottom on mobile, left on desktop */}
-        <div className="order-2 sm:order-1 flex-1 text-center sm:text-left">
+        <div className="flex-1 text-center sm:text-left">
           <motion.p
             className="shimmer-text font-mono text-sm tracking-widest mb-4"
             initial={{ opacity: 0, y: 20 }}
@@ -79,11 +76,6 @@ export default function Hero() {
           >
             <Typewriter />
           </motion.div>
-        </div>
-
-        {/* Globe — top on mobile, right on desktop */}
-        <div className="order-1 sm:order-2 w-55 h-55 sm:w-95 sm:h-95 md:w-115 md:h-115 shrink-0 pointer-events-none">
-          <Globe />
         </div>
 
       </div>
