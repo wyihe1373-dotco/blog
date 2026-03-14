@@ -4,10 +4,14 @@ import dynamic from 'next/dynamic'
 import Typewriter from './Typewriter'
 
 const Particles = dynamic(() => import('@/components/Particles'), { ssr: false })
+const CodeBackground = dynamic(() => import('./CodeBackground'), { ssr: false })
 
 export default function Hero() {
   return (
     <section className="relative min-h-130 sm:h-screen flex items-center justify-center overflow-hidden hero-bg">
+      {/* Code background */}
+      <CodeBackground />
+
       {/* Aurora blobs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-50 h-50 md:w-125 md:h-125 bg-primary/20 rounded-full blur-[80px] md:blur-[120px] animate-pulse" />
