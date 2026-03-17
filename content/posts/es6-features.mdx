@@ -318,6 +318,34 @@ const img = await Promise.any([
 
 适合：**备用方案**，多个来源竞争，只要有一个成功即可。
 
+**实战：定投金额校验**
+
+校验用户输入的定投金额，需要同时满足：① ≥ 起购金额；② ≤ 可用余额。
+其中起购金额来自产品详情接口，而产品详情接口需要先用 `productCode` 查出 `productId` 才能调用——形成依赖链。
+
+```javascript
+async function validateAmount(productCode, inputAmount) {
+  // 第一步：拿到 productId（后续查询的前置依赖）
+  const { productId } = await fetchProductInfo(productCode)
+
+  // 第二步：productId 到手后，起购金额和余额可以并行查
+  const [minAmount, balance] = await Promise.all([
+    fetchMinInvestAmount(productId),   // 依赖 productId，不能提前
+    fetchAvailableBalance(),            // 与产品无关，可以并行
+  ])
+
+  if (inputAmount < minAmount) {
+    return { valid: false, reason: `最低起购金额为 ${minAmount} 元` }
+  }
+  if (inputAmount > balance) {
+    return { valid: false, reason: `可用余额不足，当前余额 ${balance} 元` }
+  }
+  return { valid: true }
+}
+```
+
+关键点：`fetchProductInfo` 必须先完成（链式 `await`），拿到 `productId` 之后，两个校验数据之间没有依赖关系，用 `Promise.all` 并行发出，总耗时取决于较慢的那个，而不是两者之和。
+
 ---
 
 ## Map / Set
