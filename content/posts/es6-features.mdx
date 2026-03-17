@@ -263,26 +263,60 @@ async function fetchUser(id) {
 
 ### 常用的 Promise 静态方法
 
+| 方法 | 触发时机 | 失败行为 | 典型场景 |
+|------|----------|----------|----------|
+| `Promise.all` | 全部成功 | 任一失败则整体 reject | 并行请求、互相依赖的数据 |
+| `Promise.race` | 第一个完成（无论成败） | 第一个失败则 reject | 超时控制、竞速取最快 |
+| `Promise.allSettled` | 全部完成 | 不短路，收集所有结果 | 批量操作、统计成功/失败数 |
+| `Promise.any` | 第一个成功 | 全部失败才 reject | 备用服务、多源 CDN |
+
+**`Promise.all` — 全部成功才继续，任一失败则中止**
+
 ```javascript
-// 全部成功才继续
+// 用户页需要同时加载用户信息和订单，缺一不可
 const [user, orders] = await Promise.all([
   fetchUser(id),
   fetchOrders(id),
 ])
-
-// 哪个先完成用哪个
-const result = await Promise.race([
-  fetchWithTimeout(),
-  timeout(5000),
-])
-
-// 全部完成，不管成功失败
-const results = await Promise.allSettled([p1, p2, p3])
-results.forEach(r => {
-  if (r.status === 'fulfilled') console.log(r.value)
-  else console.log(r.reason)
-})
 ```
+
+适合：请求之间**互相依赖**，或结果必须同时存在才有意义。
+
+**`Promise.race` — 第一个完成（成功或失败）就结束**
+
+```javascript
+// 5 秒内没响应就超时报错
+const result = await Promise.race([
+  fetchData(),
+  new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+])
+```
+
+适合：**超时控制**。注意：输掉的 Promise 仍在后台运行，不会被取消。
+
+**`Promise.allSettled` — 等全部完成，不管成败**
+
+```javascript
+// 批量上传图片，统计结果
+const results = await Promise.allSettled([upload(img1), upload(img2), upload(img3)])
+const succeeded = results.filter(r => r.status === 'fulfilled').length
+const failed    = results.filter(r => r.status === 'rejected')
+console.log(`成功 ${succeeded}，失败 ${failed.length}`)
+```
+
+适合：**批量操作**，需要知道每一项的结果，不能因为某一个失败就中断其他。
+
+**`Promise.any` — 第一个成功就结束，全败才报错**
+
+```javascript
+// 从多个 CDN 取资源，哪个快用哪个
+const img = await Promise.any([
+  fetch('https://cdn1.example.com/img.png'),
+  fetch('https://cdn2.example.com/img.png'),
+])
+```
+
+适合：**备用方案**，多个来源竞争，只要有一个成功即可。
 
 ---
 
