@@ -5,6 +5,7 @@ import { MDXRemote } from 'next-mdx-remote/rsc'
 import remarkGfm from 'remark-gfm'
 import PostNav from './PostNav'
 import ReadingProgress from './ReadingProgress'
+import TableOfContents from './TableOfContents'
 import EventLoopDiagram from '@/components/Blog/EventLoopDiagram'
 
 export function generateStaticParams() {
@@ -26,6 +27,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
     <>
       <ReadingProgress />
       <PostNav title={data.title} />
+      <TableOfContents />
 
       {/* Hero header */}
       <div className="relative overflow-hidden bg-gradient-to-b from-primary/10 via-[#050510] to-[#050510] pt-16 pb-8">

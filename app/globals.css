@@ -52,6 +52,16 @@ body::-webkit-scrollbar {
   100% { background-position:  200% center; }
 }
 
+/* Slide up animation for mobile bottom sheet */
+@keyframes slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
 .shimmer-text {
   background: linear-gradient(
     90deg,
