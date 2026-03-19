@@ -74,6 +74,14 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
             source={content}
             options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }}
             components={{
+              h2: ({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => {
+                const id = String(children).toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '')
+                return <h2 id={id} {...props}>{children}</h2>
+              },
+              h3: ({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => {
+                const id = String(children).toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '')
+                return <h3 id={id} {...props}>{children}</h3>
+              },
               pre: ({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) => (
                 <div className="code-block">
                   <pre {...props}>{children}</pre>
