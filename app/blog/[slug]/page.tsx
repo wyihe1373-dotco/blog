@@ -4,6 +4,7 @@ import matter from 'gray-matter'
 import { MDXRemote } from 'next-mdx-remote/rsc'
 import remarkGfm from 'remark-gfm'
 import PostNav from './PostNav'
+import ReadingProgress from './ReadingProgress'
 import EventLoopDiagram from '@/components/Blog/EventLoopDiagram'
 
 export function generateStaticParams() {
@@ -23,6 +24,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
 
   return (
     <>
+      <ReadingProgress />
       <PostNav title={data.title} />
 
       {/* Hero header */}
